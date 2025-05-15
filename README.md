@@ -9,7 +9,7 @@
 - **Backend**: FastAPI製のREST APIサーバー
 - **Frontend**: Next.js製のWebアプリケーション
 
-## 立ち上げ方法（Docker Compose推奨）
+## 立ち上げ方法（Docker Compose）
 
 Docker Composeを使うと、バックエンドとフロントエンドを一度に簡単に起動できます。
 
@@ -36,8 +36,12 @@ cd backend
 cd ..  # プロジェクトのルートディレクトリに戻る
 docker-compose up
 ```
+（バックエンドは http://localhost:8000、 フロントエンドは http://localhost:3000 で起動します。)
 
-これでバックエンドは http://localhost:8000、フロントエンドは http://localhost:3000 で実行されます。
+4. http://localhost:3000 にアクセス
+トップ画面が表示されたらOK
+
+
 
 > **注意**: フロントエンドのコードには一部ESLintエラーがありますが、開発環境では問題なく動作します。本番環境にデプロイする前に修正することをお勧めします。
 
