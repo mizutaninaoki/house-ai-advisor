@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+fastapi = "*"
+uvicorn = "*"
+python-multipart = "*"
+pydantic = "*"
+httpx = "*"
+python-dotenv = "*"
+google-cloud-speech = "*"
+google-generativeai = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.11"
+
+[scripts]
+dev = "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
