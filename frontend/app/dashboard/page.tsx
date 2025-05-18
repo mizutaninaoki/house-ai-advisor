@@ -4,7 +4,13 @@ import { useState, useEffect } from 'react';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
 import Link from 'next/link';
-import { HomeIcon, UserIcon, UserGroupIcon, ChatBubbleLeftRightIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { 
+  UserIcon, 
+  UserGroupIcon, 
+  ChatBubbleLeftRightIcon, 
+  FolderIcon,
+  PlusCircleIcon
+} from '@heroicons/react/24/outline';
 import ProtectedRoute from '@/app/auth/ProtectedRoute';
 import { useAuth } from '@/app/auth/AuthContext';
 
@@ -149,10 +155,18 @@ export default function Dashboard() {
               
               <div className="grid grid-cols-2 gap-4">
                 <Link 
+                  href="/projects" 
+                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
+                >
+                  <FolderIcon className="h-8 w-8 text-cyan-500 mb-2" />
+                  <span className="text-sm font-medium text-gray-700">プロジェクト一覧</span>
+                </Link>
+                
+                <Link 
                   href="/projects/new" 
                   className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
                 >
-                  <HomeIcon className="h-8 w-8 text-cyan-500 mb-2" />
+                  <PlusCircleIcon className="h-8 w-8 text-cyan-500 mb-2" />
                   <span className="text-sm font-medium text-gray-700">新規プロジェクト</span>
                 </Link>
                 
@@ -170,14 +184,6 @@ export default function Dashboard() {
                 >
                   <ChatBubbleLeftRightIcon className="h-8 w-8 text-cyan-500 mb-2" />
                   <span className="text-sm font-medium text-gray-700">ヘルプ</span>
-                </Link>
-                
-                <Link 
-                  href="/dashboard/templates" 
-                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
-                >
-                  <DocumentTextIcon className="h-8 w-8 text-cyan-500 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">書類テンプレート</span>
                 </Link>
               </div>
             </div>
