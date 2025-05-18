@@ -3,7 +3,7 @@
  */
 
 // APIのベースURL（環境変数から読み込むか、デフォルト値を使用）
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
  * 音声ファイルを文字起こしするAPI
@@ -274,4 +274,270 @@ export async function compareProposals(
       recommendation: proposals[0]?.id || 'unknown'
     };
   }
-} 
+}
+
+// API通信を行うためのユーティリティ関数
+
+// ユーザー関連のAPI
+export const userApi = {
+  // ユーザーの作成
+  createUser: async (userData: { email: string, name: string, firebase_uid?: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`ユーザー作成に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // ユーザーの取得
+  getUser: async (userId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/${userId}`);
+    
+    if (!response.ok) {
+      throw new Error(`ユーザー取得に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // メールアドレスでユーザーを検索
+  getUserByEmail: async (email: string) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/email/${email}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null; // ユーザーが見つからない場合はnullを返す
+      }
+      throw new Error(`ユーザー検索に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // Firebase UIDでユーザーを検索
+  getUserByFirebaseUid: async (firebaseUid: string) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/firebase/${firebaseUid}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null; // ユーザーが見つからない場合はnullを返す
+      }
+      throw new Error(`ユーザー検索に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // Firebase認証情報からユーザーを作成/取得
+  getOrCreateFromFirebase: async (firebaseUser: { uid: string, email: string, displayName?: string }) => {
+    try {
+      // まずFirebase UIDでユーザーを検索
+      const userByUid = await userApi.getUserByFirebaseUid(firebaseUser.uid).catch(() => null);
+      if (userByUid) return userByUid;
+      
+      // 次にメールアドレスで検索
+      const userByEmail = await userApi.getUserByEmail(firebaseUser.email).catch(() => null);
+      
+      if (userByEmail) {
+        // 既存ユーザーがFirebase UIDを持っていない場合は更新
+        if (!userByEmail.firebase_uid) {
+          // この更新は簡略化のため省略。実際にはAPIエンドポイントを追加する必要があるかも
+          // ここではユーザーを作成時と同じように再登録して関連付けを行う
+          return await userApi.createUser({
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || 'ユーザー',
+            firebase_uid: firebaseUser.uid
+          });
+        }
+        return userByEmail;
+      }
+      
+      // 存在しない場合は新規作成
+      return await userApi.createUser({
+        email: firebaseUser.email,
+        name: firebaseUser.displayName || 'ユーザー',
+        firebase_uid: firebaseUser.uid
+      });
+    } catch (error) {
+      console.error('Firebase認証ユーザーの処理エラー:', error);
+      throw new Error('ユーザー情報の同期に失敗しました');
+    }
+  },
+};
+
+// プロジェクト関連のAPI
+export const projectApi = {
+  // プロジェクト一覧の取得
+  getProjects: async (userId?: number) => {
+    let url = `${API_BASE_URL}/api/projects/`;
+    if (userId) {
+      url += `?user_id=${userId}`;
+    }
+    
+    console.log('プロジェクト取得URL:', url);
+    
+    try {
+      const response = await fetch(url);
+      
+      console.log('プロジェクト取得レスポンス:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`プロジェクト一覧の取得に失敗しました: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('プロジェクト取得エラー:', error);
+      throw error;
+    }
+  },
+  
+  // プロジェクトの詳細取得
+  getProject: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`);
+    
+    if (!response.ok) {
+      throw new Error(`プロジェクト詳細の取得に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // プロジェクトの作成
+  createProject: async (projectData: { title: string, description: string, user_id: number }) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(projectData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`プロジェクト作成に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // プロジェクトの更新
+  updateProject: async (projectId: number, projectData: { title: string, description: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(projectData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`プロジェクト更新に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // プロジェクトの削除
+  deleteProject: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+};
+
+// 提案関連のAPI
+export const proposalApi = {
+  // 提案一覧の取得
+  getProposals: async (projectId?: number) => {
+    let url = `${API_BASE_URL}/api/proposals/`;
+    if (projectId) {
+      url += `?project_id=${projectId}`;
+    }
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`提案一覧の取得に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // 提案の詳細取得
+  getProposal: async (proposalId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}`);
+    
+    if (!response.ok) {
+      throw new Error(`提案詳細の取得に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // 提案の作成
+  createProposal: async (proposalData: { 
+    project_id: number, 
+    title: string, 
+    content: string,
+    image_url?: string,
+    is_favorite?: boolean
+  }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proposalData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`提案作成に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // お気に入り状態の切り替え
+  toggleFavorite: async (proposalId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}/favorite`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`お気に入り状態の更新に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // 提案の削除
+  deleteProposal: async (proposalId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`提案削除に失敗しました: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  },
+}; 

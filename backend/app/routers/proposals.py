@@ -1,12 +1,16 @@
 import os
 import json
 import random
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import google.generativeai as genai
 from threading import Lock
+
+from app.db import crud, schemas
+from app.db.session import get_db
 
 router = APIRouter()
 
@@ -31,6 +35,8 @@ except Exception as e:
     USE_MOCK = True
     print("モックモードに切り替えました")
 
+# ===== AI提案生成機能 (旧proposal.py) =====
+
 class ProposalRequest(BaseModel):
     project_id: str
     issues: List[Dict[str, Any]]
@@ -41,7 +47,7 @@ class ComparisonRequest(BaseModel):
     proposals: List[Dict[str, Any]]
     criteria: Optional[List[str]] = None
 
-@router.post("/generate", summary="論点に基づいた提案生成")
+@router.post("/ai/generate", summary="論点に基づいた提案生成", tags=["AI Proposals"])
 async def generate_proposals(request: ProposalRequest):
     """
     抽出された論点に基づいて遺産分割の提案を生成します。
@@ -180,7 +186,7 @@ async def generate_proposals(request: ProposalRequest):
             detail=f"提案生成中にエラーが発生しました: {str(e)}"
         )
 
-@router.post("/compare", summary="複数提案の比較")
+@router.post("/ai/compare", summary="複数提案の比較", tags=["AI Proposals"])
 async def compare_proposals(request: ComparisonRequest):
     """
     複数の提案を比較分析します。
@@ -248,7 +254,6 @@ async def compare_proposals(request: ComparisonRequest):
   "recommendation": "最も推奨される提案のID"
 }}
 
-遺産相続の視点から、各提案の長所と短所を批判的に分析し、客観的な評価を行ってください。
 説明などは不要です。JSONのみを返してください。
 """
         
@@ -273,7 +278,7 @@ async def compare_proposals(request: ComparisonRequest):
                     result = json.loads(result_text)
                 
                 # 結果の検証
-                if "comparison" not in result or "criteria" not in result or "recommendation" not in result:
+                if "comparison" not in result or "recommendation" not in result:
                     raise ValueError("APIレスポンスに必要なフィールドがありません")
                 
                 return JSONResponse(
@@ -292,62 +297,135 @@ async def compare_proposals(request: ComparisonRequest):
         )
 
 def _mock_proposal_generation() -> Dict[str, Any]:
-    """モックの提案生成処理"""
-    # 遺産相続の典型的な提案
-    mock_proposals = [
+    """モックの提案生成データを返す（デバッグ・テスト用）"""
+    proposals = [
         {
             "id": "proposal_1",
-            "title": "実家は長男が相続し、他の相続人には現金で代償",
-            "description": "実家を売却せずに長男が住み続け、その代わりに他の相続人には預貯金から多めに分配する案",
+            "title": "不動産の現金化による平等分配",
+            "description": "不動産を売却して現金化し、相続人で平等に分配する案",
             "points": [
-                {"type": "merit", "content": "実家を維持できる"},
-                {"type": "merit", "content": "現金を必要とする相続人にはすぐに資金が入る"},
-                {"type": "demerit", "content": "不動産評価額の算定が難しい"},
-                {"type": "cost", "content": "代償金の用意が必要"}
+                {"type": "merit", "content": "平等な分配が可能"},
+                {"type": "merit", "content": "将来的な管理問題が発生しない"},
+                {"type": "demerit", "content": "思い入れのある不動産を手放す必要がある"},
+                {"type": "cost", "content": "不動産売却の仲介手数料が発生する"},
+                {"type": "effort", "content": "不動産売却の手続きが必要"}
             ],
-            "support_rate": 65
+            "support_rate": 75
         },
         {
             "id": "proposal_2",
-            "title": "実家を売却して全ての資産を現金化後に分割",
-            "description": "不動産を売却して現金化し、法定相続分に応じて分割する案",
+            "title": "不動産の共同所有と収益分配",
+            "description": "不動産を共同所有とし、賃貸収益を相続人で分配する案",
             "points": [
-                {"type": "merit", "content": "分かりやすく公平"},
-                {"type": "merit", "content": "全員が現金を受け取れる"},
-                {"type": "demerit", "content": "思い出のある実家を手放す必要がある"},
-                {"type": "effort", "content": "不動産売却の手続きが必要"}
+                {"type": "merit", "content": "不動産を手放さなくて済む"},
+                {"type": "merit", "content": "継続的な収入源となる"},
+                {"type": "demerit", "content": "管理の手間と責任が発生する"},
+                {"type": "demerit", "content": "将来的に相続人間で意見の相違が生じる可能性がある"},
+                {"type": "cost", "content": "定期的なメンテナンス費用が必要"},
+                {"type": "effort", "content": "共有名義の登記と賃貸管理の体制構築が必要"}
             ],
-            "support_rate": 40
+            "support_rate": 60
+        },
+        {
+            "id": "proposal_3",
+            "title": "一部現金化と一部共同所有の折衷案",
+            "description": "不動産の一部を売却して現金化し、残りを共同所有とする折衷案",
+            "points": [
+                {"type": "merit", "content": "一部は即時分配が可能"},
+                {"type": "merit", "content": "不動産の一部は保持できる"},
+                {"type": "demerit", "content": "部分売却が難しい場合がある"},
+                {"type": "cost", "content": "複雑な評価と分割手続きが必要"},
+                {"type": "effort", "content": "部分売却と共有持分の設定などの複雑な手続きが必要"}
+            ],
+            "support_rate": 85
         }
     ]
     
+    # ランダムに推奨提案を選択
+    recommendation = random.choice([p["id"] for p in proposals])
+    
     return {
-        "proposals": mock_proposals,
-        "recommendation": "proposal_1"
+        "proposals": proposals,
+        "recommendation": recommendation
     }
 
 def _mock_proposal_comparison(proposals: List[Dict[str, Any]], criteria: List[str]) -> Dict[str, Any]:
-    """モックの提案比較処理"""
-    comparison_result = []
-    for proposal in proposals:
-        scores = {}
-        for criterion in criteria:
-            # 単純なランダムスコア（実際は提案内容に基づく計算）
-            scores[criterion] = random.randint(1, 5)  # 1〜5のスコア
-            
-        total_score = sum(scores.values())
-        comparison_result.append({
-            "proposal_id": proposal.get("id", "unknown"),
-            "title": proposal.get("title", ""),
-            "scores": scores,
-            "total_score": total_score
-        })
+    """モックの提案比較データを返す（デバッグ・テスト用）"""
+    comparison = []
     
-    # 最高スコアの提案を推奨
-    recommendation = max(comparison_result, key=lambda x: x["total_score"])
+    for prop in proposals:
+        prop_comparison = {
+            "proposal_id": prop.get("id", "unknown"),
+            "title": prop.get("title", "Unknown Proposal"),
+            "scores": {}
+        }
+        
+        total_score = 0
+        for criterion in criteria:
+            # 1から5のランダムなスコアを生成
+            score = random.randint(1, 5)
+            prop_comparison["scores"][criterion] = score
+            total_score += score
+        
+        prop_comparison["total_score"] = total_score
+        comparison.append(prop_comparison)
+    
+    # 最高スコアの提案を推奨として選択
+    if comparison:
+        recommendation = max(comparison, key=lambda x: x["total_score"])["proposal_id"]
+    else:
+        recommendation = None
     
     return {
-        "comparison": comparison_result,
+        "comparison": comparison,
         "criteria": criteria,
-        "recommendation": recommendation["proposal_id"]
-    } 
+        "recommendation": recommendation
+    }
+
+# ===== データベース提案管理機能 (旧proposals_db.py) =====
+
+@router.post("/", response_model=schemas.Proposal, tags=["DB Proposals"])
+def create_proposal(proposal: schemas.ProposalCreate, db: Session = Depends(get_db)):
+    """新しい提案を作成する"""
+    return crud.create_proposal(db=db, proposal=proposal)
+
+@router.get("/", response_model=List[schemas.Proposal], tags=["DB Proposals"])
+def read_proposals(project_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """提案一覧を取得する（プロジェクトIDによるフィルタリング可能）"""
+    proposals = crud.get_proposals(db, project_id=project_id, skip=skip, limit=limit)
+    return proposals
+
+@router.get("/{proposal_id}", response_model=schemas.Proposal, tags=["DB Proposals"])
+def read_proposal(proposal_id: int, db: Session = Depends(get_db)):
+    """特定の提案を取得する"""
+    db_proposal = crud.get_proposal(db, proposal_id=proposal_id)
+    if db_proposal is None:
+        raise HTTPException(status_code=404, detail="提案が見つかりません")
+    return db_proposal
+
+@router.put("/{proposal_id}", response_model=schemas.Proposal, tags=["DB Proposals"])
+def update_proposal(proposal_id: int, proposal_data: dict, db: Session = Depends(get_db)):
+    """提案を更新する"""
+    db_proposal = crud.update_proposal(db, proposal_id=proposal_id, proposal_data=proposal_data)
+    if db_proposal is None:
+        raise HTTPException(status_code=404, detail="提案が見つかりません")
+    return db_proposal
+
+@router.put("/{proposal_id}/favorite", response_model=schemas.Proposal, tags=["DB Proposals"])
+def toggle_favorite(proposal_id: int, db: Session = Depends(get_db)):
+    """提案のお気に入り状態を切り替える"""
+    db_proposal = crud.get_proposal(db, proposal_id=proposal_id)
+    if db_proposal is None:
+        raise HTTPException(status_code=404, detail="提案が見つかりません")
+    
+    # お気に入り状態を反転
+    update_data = {"is_favorite": not db_proposal.is_favorite}
+    return crud.update_proposal(db, proposal_id=proposal_id, proposal_data=update_data)
+
+@router.delete("/{proposal_id}", response_model=bool, tags=["DB Proposals"])
+def delete_proposal(proposal_id: int, db: Session = Depends(get_db)):
+    """提案を削除する"""
+    success = crud.delete_proposal(db, proposal_id=proposal_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="提案が見つかりません")
+    return success 

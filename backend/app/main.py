@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 # 環境変数の読み込み
 load_dotenv()
 
-from app.routers import speech, analysis, proposal
+from app.routers import speech, analysis, proposals, users, projects
+from app.db.session import engine
+from app.db import models
+
+# データベースのテーブル作成
+# models.Base.metadata.create_all(bind=engine)  # Alembicを使うのでコメントアウト
 
 app = FastAPI(
     title="おうちのAI相談室",
@@ -17,7 +22,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="*",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,7 +31,9 @@ app.add_middleware(
 # ルーターの登録
 app.include_router(speech.router, prefix="/api/speech", tags=["Speech"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
-app.include_router(proposal.router, prefix="/api/proposals", tags=["Proposals"])
+app.include_router(proposals.router, prefix="/api/proposals", tags=["Proposals"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 
 @app.get("/", tags=["Root"])
 async def read_root():

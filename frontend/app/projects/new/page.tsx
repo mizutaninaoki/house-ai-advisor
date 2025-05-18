@@ -3,52 +3,42 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/app/firebase/config';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
 import EstateRegistrationForm, { EstateData } from '@/app/components/EstateRegistrationForm';
+import { projectApi } from '@/app/utils/api';
+import { useAuth } from '@/app/auth/AuthContext';
 
 export default function NewProject() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading, backendUserId } = useAuth();
   const [step, setStep] = useState(1);
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [estateData, setEstateData] = useState<EstateData | null>(null);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   
   useEffect(() => {
-    try {
-      // 認証をバイパスして常に表示する
-      setUser({ displayName: 'テストユーザー', email: 'test@example.com', uid: 'mock-user-id' } as User);
+    // AuthContextからのユーザー情報を利用するため、ローディング状態を更新
+    if (!authLoading) {
       setLoading(false);
-      
-      // 認証機能は一時的に無効化
-      /*
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-          setUser(currentUser);
-        } else {
-          router.push('/auth/signin');
-        }
-        setLoading(false);
-      });
-      
-      return () => unsubscribe();
-      */
-      return () => {}; // 空のクリーンアップ関数
-    } catch (error) {
-      console.error('認証エラー:', error);
-      // モックデータを表示
-      setUser({ displayName: 'テストユーザー', email: 'test@example.com', uid: 'mock-user-id' } as User);
-      setLoading(false);
+      if (!user) {
+        // ログインしていなければログイン画面にリダイレクト
+        router.push('/auth/signin');
+      } else {
+        // デバッグ用: ユーザー情報をコンソールに表示
+        console.log('現在のユーザー情報:', {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL
+        });
+      }
     }
-  }, []);
+  }, [user, authLoading, router]);
   
   const handleEstateSubmit = (data: EstateData) => {
     setEstateData(data);
@@ -67,35 +57,52 @@ export default function NewProject() {
       setFormError('ログインが必要です');
       return;
     }
+
+    if (!backendUserId) {
+      setFormError('ユーザー情報が取得できませんでした。再度ログインしてください。');
+      console.error('バックエンドユーザーIDがnullです。ログイン処理が正しく完了していない可能性があります。');
+      return;
+    }
+
+    console.log('プロジェクト作成処理を開始:', {
+      projectName,
+      projectDescription,
+      backendUserId,
+      firebaseUser: {
+        uid: user.uid,
+        email: user.email
+      }
+    });
     
     try {
       setIsSubmitting(true);
       setFormError('');
       
-      // Firestoreへの保存はモック化
-      console.log('プロジェクト作成（デモ）:', {
-        name: projectName,
+      // プロジェクト作成データの準備
+      const projectData = {
+        title: projectName,
         description: projectDescription,
-        createdBy: user.uid,
-        members: [
-          {
-            uid: user.uid,
-            email: user.email,
-            name: user.displayName || 'ユーザー',
-            role: 'owner'
-          }
-        ],
-        estateData
-      });
+        user_id: backendUserId
+      };
+      console.log('プロジェクト作成リクエストデータ:', projectData);
       
-      // モックIDで成功したことにする
-      const mockProjectId = Math.floor(Math.random() * 1000).toString();
+      // バックエンドAPIを使用してプロジェクトを作成
+      const newProject = await projectApi.createProject(projectData);
+      
+      console.log('プロジェクト作成成功:', newProject);
       
       // 成功後、プロジェクト詳細画面に遷移
-      router.push(`/projects/${mockProjectId}`);
+      router.push(`/projects/${newProject.id}`);
     } catch (error) {
       console.error('プロジェクト作成エラー:', error);
-      setFormError('プロジェクトの作成中にエラーが発生しました。もう一度お試しください。');
+      
+      // エラーメッセージをより詳細に設定
+      if (error instanceof Error) {
+        setFormError(`プロジェクトの作成中にエラーが発生しました: ${error.message}`);
+      } else {
+        setFormError('プロジェクトの作成中に不明なエラーが発生しました。もう一度お試しください。');
+      }
+      
       setIsSubmitting(false);
     }
   };
@@ -118,7 +125,7 @@ export default function NewProject() {
   if (loading) {
     return (
       <div className="flex flex-col min-h-screen">
-        <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+        <Header isLoggedIn={!!user} userName={user?.displayName || undefined} />
         <main className="flex-grow flex items-center justify-center">
           <p>読み込み中...</p>
         </main>
@@ -129,7 +136,7 @@ export default function NewProject() {
   
   return (
     <div className="flex flex-col min-h-screen">
-      <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+      <Header isLoggedIn={!!user} userName={user?.displayName || undefined} />
       
       <main className="flex-grow container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
