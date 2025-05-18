@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from './auth/AuthContext';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,8 +20,8 @@ const notoSansJP = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "家相続AI",
-  description: "家族間の遺産分割合意形成をサポートするアプリケーション",
+  title: "おうちのAI相談室 - 遺産分割をスムーズに",
+  description: "家族間の遺産分割をAIとチャットで円滑に進めるプラットフォーム",
   manifest: "/manifest.json",
   icons: {
     apple: '/favicon.ico',
@@ -37,7 +38,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansJP.variable} font-sans antialiased bg-gray-50`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

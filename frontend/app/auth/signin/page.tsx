@@ -1,36 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '@/app/firebase/config';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
+import { useAuth } from '../AuthContext';
 
 export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
+  const { signInWithGoogle } = useAuth();
   
-  const signInWithGoogle = async () => {
+  const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
       setError('');
       
-      // 認証をスキップしてダッシュボードへ直接移動
-      router.push('/dashboard');
-      
-      /*
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      router.push('/dashboard');
-      */
+      await signInWithGoogle();
+      // 認証成功時は AuthContext 内で自動的にダッシュボードにリダイレクトされます
     } catch (err) {
       console.error('ログインエラー:', err);
-      
-      // エラーが発生しても開発環境ではダッシュボードに移動
-      router.push('/dashboard');
+      setError('ログインに失敗しました。もう一度お試しください。');
     } finally {
       setLoading(false);
     }
@@ -43,7 +33,7 @@ export default function SignIn() {
       <main className="flex-grow flex items-center justify-center bg-gray-50 px-4 py-12">
         <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold text-center text-gray-800 mb-6">
-            家相続AIへようこそ
+            おうちのAI相談室へようこそ
           </h1>
           
           <p className="text-gray-600 text-center mb-8">
@@ -58,7 +48,7 @@ export default function SignIn() {
           )}
           
           <button
-            onClick={signInWithGoogle}
+            onClick={handleGoogleSignIn}
             disabled={loading}
             className={`
               w-full flex items-center justify-center
@@ -79,7 +69,7 @@ export default function SignIn() {
           </button>
           
           <p className="mt-6 text-center text-sm text-gray-600">
-            登録がまだの方は、<Link href="/dashboard" className="text-indigo-600 hover:text-indigo-500">ダッシュボードへ</Link>
+            または、<Link href="/" className="text-indigo-600 hover:text-indigo-500">ホームに戻る</Link>
           </p>
         </div>
       </main>
