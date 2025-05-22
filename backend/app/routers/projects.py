@@ -1,11 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
 
 from app.db import crud, schemas
 from app.db.session import get_db
 
 router = APIRouter()
+
+# 会話メッセージの保存用スキーマ
+class ConversationMessageCreate(BaseModel):
+    project_id: int
+    content: str
+    speaker: str
+    sentiment: Optional[str] = "neutral"
 
 @router.post("/", response_model=schemas.Project)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
@@ -40,4 +48,64 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     success = crud.delete_project(db, project_id=project_id)
     if not success:
         raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
-    return success 
+    return success
+
+# 会話関連のエンドポイント
+@router.get("/{project_id}/conversations", response_model=List[Dict[str, Any]])
+def read_project_conversations(project_id: int, db: Session = Depends(get_db)):
+    """特定のプロジェクトの会話履歴を取得する"""
+    db_project = crud.get_project(db, project_id=project_id)
+    if db_project is None:
+        raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
+    
+    # 会話データを取得 - タイムスタンプでソート済みのデータを取得
+    conversations = crud.get_conversations_ordered_by_timestamp(db, project_id=project_id)
+    
+    # フロントエンド用に会話データをフォーマット
+    result = []
+    for conv in conversations:
+        # speakerがデータベースに保存されている場合はそれを使用し、なければデフォルト値を設定
+        speaker = conv.speaker if conv.speaker else "不明なユーザー"
+        # sentimentがデータベースに保存されている場合はそれを使用し、なければデフォルト値を設定
+        sentiment = conv.sentiment if conv.sentiment else "neutral"
+        
+        result.append({
+            "id": conv.id,
+            "content": conv.content,
+            "speaker": speaker,
+            "timestamp": conv.created_at.isoformat(),
+            "sentiment": sentiment
+        })
+    
+    return result
+
+@router.post("/{project_id}/conversations", response_model=Dict[str, Any])
+def create_project_conversation(
+    project_id: int, 
+    message: ConversationMessageCreate, 
+    db: Session = Depends(get_db)
+):
+    """プロジェクトに会話メッセージを追加する"""
+    # プロジェクトの存在確認
+    db_project = crud.get_project(db, project_id=project_id)
+    if db_project is None:
+        raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
+    
+    # 会話データを保存
+    conversation_data = schemas.ConversationCreate(
+        project_id=project_id,
+        content=message.content,
+        speaker=message.speaker,  # 話者情報を保存
+        sentiment=message.sentiment  # 感情分析結果を保存
+    )
+    
+    conversation = crud.create_conversation(db, conversation_data)
+    
+    # フロントエンド用に整形
+    return {
+        "id": conversation.id,
+        "content": conversation.content,
+        "speaker": message.speaker,
+        "timestamp": conversation.created_at.isoformat(),
+        "sentiment": message.sentiment
+    } 

@@ -66,6 +66,13 @@ def get_conversations(db: Session, project_id: Optional[int] = None, skip: int =
         query = query.filter(models.Conversation.project_id == project_id)
     return query.offset(skip).limit(limit).all()
 
+def get_conversations_ordered_by_timestamp(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.Conversation)
+    if project_id:
+        query = query.filter(models.Conversation.project_id == project_id)
+    # タイムスタンプ（created_at）の昇順でソート
+    return query.order_by(models.Conversation.created_at).offset(skip).limit(limit).all()
+
 def create_conversation(db: Session, conversation: schemas.ConversationCreate):
     db_conversation = models.Conversation(**conversation.dict())
     db.add(db_conversation)
@@ -128,4 +135,60 @@ def delete_proposal(db: Session, proposal_id: int):
         db.delete(db_proposal)
         db.commit()
         return True
-    return False 
+    return False
+
+# 論点関連CRUD
+def get_issue(db: Session, issue_id: int):
+    return db.query(models.Issue).filter(models.Issue.id == issue_id).first()
+
+def get_issues(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.Issue)
+    if project_id:
+        query = query.filter(models.Issue.project_id == project_id)
+    return query.offset(skip).limit(limit).all()
+
+def create_issue(db: Session, issue: schemas.IssueCreate):
+    db_issue = models.Issue(**issue.dict())
+    db.add(db_issue)
+    db.commit()
+    db.refresh(db_issue)
+    return db_issue
+
+def create_issues_batch(db: Session, issues: List[schemas.IssueCreate]):
+    """複数の論点を一括で作成"""
+    db_issues = []
+    for issue in issues:
+        db_issue = models.Issue(**issue.dict())
+        db.add(db_issue)
+        db_issues.append(db_issue)
+    
+    db.commit()
+    for issue in db_issues:
+        db.refresh(issue)
+    
+    return db_issues
+
+def update_issue(db: Session, issue_id: int, issue_data: schemas.IssueBase):
+    db_issue = get_issue(db, issue_id)
+    if db_issue:
+        for key, value in issue_data.dict().items():
+            setattr(db_issue, key, value)
+        db.commit()
+        db.refresh(db_issue)
+    return db_issue
+
+def delete_issue(db: Session, issue_id: int):
+    db_issue = get_issue(db, issue_id)
+    if db_issue:
+        db.delete(db_issue)
+        db.commit()
+        return True
+    return False
+
+def delete_project_issues(db: Session, project_id: int):
+    """プロジェクトに関連するすべての論点を削除"""
+    issues = get_issues(db, project_id=project_id)
+    for issue in issues:
+        db.delete(issue)
+    db.commit()
+    return True 

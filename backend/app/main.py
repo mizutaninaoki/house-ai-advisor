@@ -10,6 +10,7 @@ load_dotenv()
 from app.routers import speech, analysis, proposals, users, projects
 from app.db.session import engine
 from app.db import models
+from app.routers import issues  # 論点APIルーターを追加
 
 # データベースのテーブル作成
 # models.Base.metadata.create_all(bind=engine)  # Alembicを使うのでコメントアウト
@@ -34,10 +35,16 @@ app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(proposals.router, prefix="/api/proposals", tags=["Proposals"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
+app.include_router(issues.router, prefix="/api/issues", tags=["Issues"])  # 論点APIルーターを登録
 
 @app.get("/", tags=["Root"])
 async def read_root():
     return {"message": "おうちのAI相談室へようこそ！"}
+
+# ヘルスチェック用エンドポイント
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
