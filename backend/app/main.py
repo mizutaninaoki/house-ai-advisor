@@ -7,6 +7,13 @@ from dotenv import load_dotenv
 # 環境変数の読み込み
 load_dotenv()
 
+# Google AIの初期化
+try:
+    from app.services.ai_service import initialize_google_ai
+    initialize_google_ai()
+except Exception as e:
+    print(f"Google AIの初期化エラー: {e}")
+
 from app.routers import speech, analysis, proposals, users, projects
 from app.db.session import engine
 from app.db import models

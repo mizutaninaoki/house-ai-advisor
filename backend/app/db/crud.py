@@ -148,7 +148,14 @@ def get_issues(db: Session, project_id: Optional[int] = None, skip: int = 0, lim
     return query.offset(skip).limit(limit).all()
 
 def create_issue(db: Session, issue: schemas.IssueCreate):
-    db_issue = models.Issue(**issue.dict())
+    db_issue = models.Issue(
+        project_id=issue.project_id,
+        topic=getattr(issue, 'topic', None),
+        content=issue.content,
+        type=issue.type,
+        agreement_level=issue.agreement_level,
+        classification=issue.classification
+    )
     db.add(db_issue)
     db.commit()
     db.refresh(db_issue)
@@ -158,14 +165,19 @@ def create_issues_batch(db: Session, issues: List[schemas.IssueCreate]):
     """複数の論点を一括で作成"""
     db_issues = []
     for issue in issues:
-        db_issue = models.Issue(**issue.dict())
+        db_issue = models.Issue(
+            project_id=issue.project_id,
+            topic=getattr(issue, 'topic', None),
+            content=issue.content,
+            type=issue.type,
+            agreement_level=issue.agreement_level,
+            classification=issue.classification
+        )
         db.add(db_issue)
         db_issues.append(db_issue)
-    
     db.commit()
     for issue in db_issues:
         db.refresh(issue)
-    
     return db_issues
 
 def update_issue(db: Session, issue_id: int, issue_data: schemas.IssueBase):

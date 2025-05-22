@@ -17,6 +17,12 @@ class AgreementLevel(str, enum.Enum):
     medium = "medium"
     low = "low"
 
+# 論点分類の列挙型
+class IssueClassification(str, enum.Enum):
+    agreed = "agreed"         # 合意済み（緑）
+    discussing = "discussing" # 協議中（黄）
+    disagreed = "disagreed"   # 意見相違（赤）
+
 # ユーザーモデル
 class User(Base):
     __tablename__ = "users"
@@ -102,9 +108,11 @@ class Issue(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    topic = Column(String, nullable=True)  # 論点の見出し
     content = Column(Text, nullable=False)
-    type = Column(Enum(IssueType), nullable=False)
-    agreement_level = Column(Enum(AgreementLevel), nullable=True)
+    type = Column(Enum(IssueType), nullable=False)  # type: ignore
+    agreement_level = Column(Enum(AgreementLevel), nullable=True)  # type: ignore
+    classification = Column(Enum(IssueClassification), nullable=False, default=IssueClassification.discussing)  # type: ignore
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

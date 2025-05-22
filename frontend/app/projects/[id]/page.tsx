@@ -53,6 +53,11 @@ interface Issue {
   type: 'positive' | 'negative' | 'neutral' | 'requirement';
   agreement_level?: 'high' | 'medium' | 'low';
   related_messages?: number[]; // 関連メッセージのID
+  topic?: string; // 論点のトピック（例：「相続の分割割合」）
+  summary?: string; // 論点の要約
+  status?: 'agreed' | 'disagreed' | 'discussing'; // 合意状態
+  priority?: 'high' | 'medium' | 'low'; // 優先度
+  classification?: 'agreed' | 'disagreed' | 'discussing'; // 分類
 }
 
 // 署名情報の型定義
@@ -80,6 +85,7 @@ export default function ProjectDetail() {
   const [signatures, setSignatures] = useState<Signature[]>([]); // 署名情報
   const [signingPin, setSigningPin] = useState(''); // 署名PIN
   const [isAiProcessing, setIsAiProcessing] = useState(false); // AI処理中フラグ
+  const [isExtractingIssues, setIsExtractingIssues] = useState(false); // 論点生成中フラグ
   
   useEffect(() => {
     const fetchProjectData = async () => {
@@ -385,31 +391,25 @@ export default function ProjectDetail() {
   // 論点抽出処理
   const handleExtractIssues = async () => {
     try {
-      setLoading(true);
+      setActiveTab('discussion'); // まず論点タブに切り替え
+      setIsExtractingIssues(true); // すぐローディング表示
       setError(null);
-      
       // バックエンドAPIを呼び出して会話から論点を抽出
       const result = await issueApi.extractAndSaveIssues(projectId);
-      
       // 抽出された論点データを取得
       const extractedIssues = await issueApi.getIssues(projectId);
-      
-      // 論点データをセット
       setIssues(extractedIssues);
-      
+      setIsExtractingIssues(false);
       setLoading(false);
-      
       // 処理成功メッセージを表示（オプション）
       if (result && result.message) {
         // ここでトースト通知などを表示できます
         console.log(result.message);
       }
-      
-      // 論点タブに切り替え
-      setActiveTab('discussion');
     } catch (err) {
       console.error('論点抽出エラー:', err);
       setError('会話からの論点抽出に失敗しました');
+      setIsExtractingIssues(false);
       setLoading(false);
     }
   };
@@ -752,148 +752,171 @@ export default function ProjectDetail() {
         </svg>
         <div>
           <h2 className="text-xl font-semibold">論点</h2>
-          <p className="text-gray-600 text-sm">会話から抽出された重要な論点とその分析結果</p>
+          <p className="text-gray-600 text-sm">会話から抽出された重要な話題と合意形成が必要な事項</p>
         </div>
       </div>
 
-      {/* データなしの場合 */}
-      {issues.length === 0 ? (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-          <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-          </svg>
-          <p className="text-gray-600 mb-4">まだ論点が抽出されていません</p>
-          <button 
-            onClick={() => setActiveTab('conversation')}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-          >
-            会話タブで論点を抽出する
-          </button>
+      {/* 論点生成中ローディングUI */}
+      {isExtractingIssues && (
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-indigo-500 mb-4"></div>
+          <p className="text-gray-600">AIが論点を生成中です。しばらくお待ちください…</p>
         </div>
-      ) : (
-        <div>
-          <div className="mb-8 bg-gray-50 p-5 rounded-lg border border-gray-100">
-            <h3 className="font-medium text-lg text-gray-700 mb-4 flex items-center">
-              <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+      )}
+      {!isExtractingIssues && !loading && (
+        <>
+          {/* データなしの場合 */}
+          {issues.length === 0 ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
               </svg>
-              論点サマリー
-            </h3>
-            <div className="flex flex-wrap gap-6">
-              {/* 肯定的 */}
-              <div className="flex items-center">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mr-3">
-                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              <p className="text-gray-600 mb-4">まだ論点が抽出されていません</p>
+              <button 
+                onClick={() => setActiveTab('conversation')}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+              >
+                会話タブで論点を抽出する
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="mb-8 bg-gray-50 p-5 rounded-lg border border-gray-100">
+                <h3 className="font-medium text-lg text-gray-700 mb-4 flex items-center">
+                  <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
                   </svg>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-emerald-800">{issues.filter(issue => issue.type === 'positive').length}</div>
-                  <div className="text-sm text-emerald-600">肯定的な論点</div>
+                  論点サマリー
+                </h3>
+                <div className="flex flex-wrap gap-6">
+                  {/* 合意済み */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-emerald-800">{issues.filter(issue => issue.classification === 'agreed').length}</div>
+                      <div className="text-sm text-emerald-600">合意済み</div>
+                    </div>
+                  </div>
+                  {/* 協議中 */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-amber-800">{issues.filter(issue => issue.classification === 'discussing').length}</div>
+                      <div className="text-sm text-amber-600">協議中</div>
+                    </div>
+                  </div>
+                  {/* 意見相違 */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-rose-800">{issues.filter(issue => issue.classification === 'disagreed').length}</div>
+                      <div className="text-sm text-rose-600">意見相違</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              {/* 中立的 */}
-              <div className="flex items-center">
-                <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center mr-3">
-                  <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-yellow-800">{issues.filter(issue => issue.type === 'neutral').length}</div>
-                  <div className="text-sm text-yellow-600">中立的な論点</div>
-                </div>
+
+              {/* 論点リスト - トピック別にグループ化 */}
+              <div className="space-y-6">
+                {/* 論点をトピックごとにグループ化 */}
+                {Array.from(new Set(issues.map(issue => issue.topic || '未分類'))).map(topic => (
+                  <div key={topic} className="">
+                    <div className="divide-y divide-transparent">
+                      {issues.filter(issue => (issue.topic || '未分類') === topic).map(issue => {
+                        // 色分け用クラス
+                        let cardBg = '';
+                        let badgeBg = '';
+                        let badgeText = '';
+                        let badgeIcon = null;
+                        if (issue.classification === 'agreed') {
+                          cardBg = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+                          badgeBg = 'bg-emerald-100 text-emerald-700';
+                          badgeText = '合意済み';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                          );
+                        } else if (issue.classification === 'discussing') {
+                          cardBg = 'bg-amber-50 border-amber-200 text-amber-900';
+                          badgeBg = 'bg-amber-100 text-amber-700';
+                          badgeText = '協議中';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                          );
+                        } else if (issue.classification === 'disagreed') {
+                          cardBg = 'bg-rose-50 border-rose-200 text-rose-900';
+                          badgeBg = 'bg-rose-100 text-rose-700';
+                          badgeText = '意見相違';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={issue.id}
+                            className={`relative rounded-xl border shadow-sm p-5 mb-4 flex flex-col gap-2 ${cardBg}`}
+                            style={{ minHeight: '100px' }}
+                          >
+                            {/* バッジを右上に小さく */}
+                            <div className={`absolute top-4 right-4 flex items-center px-2 py-0.5 rounded-full text-xs font-semibold shadow-sm ${badgeBg}`}
+                              style={{ zIndex: 2 }}>
+                              {badgeIcon}
+                              {badgeText}
+                            </div>
+                            {/* タイトル（topic） */}
+                            <div className="font-bold text-base mb-1 flex items-center gap-2">
+                              <span>{issue.topic || '論点'}</span>
+                            </div>
+                            {/* 内容 */}
+                            <p className="text-base leading-relaxed mb-1 break-words">{issue.content}</p>
+                            {/* 追加情報 */}
+                            {issue.classification === 'disagreed' && (
+                              <div className="mt-2 text-xs text-rose-700 bg-rose-100 p-2 rounded">
+                                <span className="font-medium">意見の相違：</span>この項目について参加者間で意見が分かれています。詳細な話し合いが必要です。
+                              </div>
+                            )}
+                            {issue.classification === 'agreed' && (
+                              <div className="mt-2 text-xs text-emerald-700 bg-emerald-100 p-2 rounded">
+                                <span className="font-medium">合意事項：</span>この項目については全員の合意が得られています。
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-              {/* 否定的 */}
-              <div className="flex items-center">
-                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center mr-3">
-                  <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-rose-800">{issues.filter(issue => issue.type === 'negative').length}</div>
-                  <div className="text-sm text-rose-600">否定的な論点</div>
-                </div>
-              </div>
-              {/* 要望・ニーズ */}
-              <div className="flex items-center">
-                <div className="w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center mr-3">
-                  <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-sky-800">{issues.filter(issue => issue.type === 'requirement').length}</div>
-                  <div className="text-sm text-sky-600">要望・ニーズ</div>
-                </div>
+              
+              <div className="flex justify-between mt-8">
+                <button 
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                  onClick={() => setActiveTab('conversation')}
+                >
+                  会話に戻る
+                </button>
+                <button 
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  onClick={() => setActiveTab('proposal')}
+                >
+                  提案を見る
+                </button>
               </div>
             </div>
-          </div>
-
-          {/* 論点リスト */}
-          <div className="space-y-4">
-            {issues.map(issue => (
-              <div key={issue.id} className={`p-4 rounded-lg border ${
-                issue.type === 'positive' ? 'bg-emerald-50 border-emerald-200' :
-                issue.type === 'negative' ? 'bg-rose-50 border-rose-200' :
-                issue.type === 'requirement' ? 'bg-sky-50 border-sky-200' :
-                'bg-yellow-50 border-yellow-200'
-              }`}>
-                <div className="flex items-center mb-2">
-                  <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full mr-2 ${
-                    issue.type === 'positive' ? 'bg-emerald-100 text-emerald-800' :
-                    issue.type === 'negative' ? 'bg-rose-100 text-rose-800' :
-                    issue.type === 'requirement' ? 'bg-sky-100 text-sky-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {issue.type === 'positive' ? '✓' :
-                     issue.type === 'negative' ? '✗' :
-                     issue.type === 'requirement' ? '★' : '?'}
-                  </span>
-                  <span className={`text-sm font-medium ${
-                    issue.type === 'positive' ? 'text-emerald-800' :
-                    issue.type === 'negative' ? 'text-rose-800' :
-                    issue.type === 'requirement' ? 'text-sky-800' :
-                    'text-yellow-800'
-                  }`}>
-                    {issue.type === 'positive' ? '肯定的な論点' :
-                     issue.type === 'negative' ? '否定的な論点' :
-                     issue.type === 'requirement' ? '要望・ニーズ' : '中立的な論点'}
-                  </span>
-                  {issue.agreement_level && (
-                    <span className={`ml-auto text-xs px-2 py-1 rounded-full ${
-                      issue.agreement_level === 'high' ? 'bg-green-100 text-green-800' :
-                      issue.agreement_level === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      合意度: {
-                        issue.agreement_level === 'high' ? '高' :
-                        issue.agreement_level === 'medium' ? '中' : '低'
-                      }
-                    </span>
-                  )}
-                </div>
-                <p className="text-gray-800">{issue.content}</p>
-              </div>
-            ))}
-          </div>
-          
-          <div className="flex justify-between mt-8">
-            <button 
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-              onClick={() => setActiveTab('conversation')}
-            >
-              会話に戻る
-            </button>
-            <button 
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-              onClick={() => setActiveTab('proposal')}
-            >
-              提案を見る
-            </button>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

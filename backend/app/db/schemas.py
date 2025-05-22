@@ -130,10 +130,17 @@ class AgreementLevel(str, Enum):
     medium = "medium"
     low = "low"
 
+class IssueClassification(str, Enum):
+    agreed = "agreed"         # 合意済み（緑）
+    discussing = "discussing" # 協議中（黄）
+    disagreed = "disagreed"   # 意見相違（赤）
+
 class IssueBase(BaseModel):
+    topic: Optional[str] = None  # 論点の見出し
     content: str
     type: IssueType
     agreement_level: Optional[AgreementLevel] = None
+    classification: IssueClassification = IssueClassification.discussing
 
 class IssueCreate(IssueBase):
     project_id: int

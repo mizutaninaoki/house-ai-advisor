@@ -90,7 +90,8 @@ async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(ge
     for issue in extracted_issues:
         issue_create = schemas.IssueCreate(
             project_id=request.project_id,
-            content=issue["content"],
+            topic=issue.get("topic"),
+            content=issue.get("content"),
             type=issue["type"],
             agreement_level=issue.get("agreement_level")
         )
@@ -99,6 +100,7 @@ async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(ge
         issue_schema = schemas.Issue(
             id=db_issue.id,
             project_id=db_issue.project_id,
+            topic=db_issue.topic,
             content=db_issue.content,
             type=db_issue.type,
             agreement_level=db_issue.agreement_level,
@@ -132,4 +134,17 @@ def delete_issue(issue_id: int, db: Session = Depends(get_db)):
     success = crud.delete_issue(db, issue_id=issue_id)
     if not success:
         raise HTTPException(status_code=404, detail="論点が見つかりません")
-    return success 
+    return success
+
+@router.get("/summary", response_model=Dict[str, int])
+def get_issue_summary(
+    project_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """各分類ごとの論点数を返すサマリーAPI"""
+    issues = crud.get_issues(db, project_id=project_id)
+    summary = {"agreed": 0, "discussing": 0, "disagreed": 0}
+    for issue in issues:
+        if hasattr(issue, "classification") and issue.classification:
+            summary[str(issue.classification)] += 1
+    return summary 
