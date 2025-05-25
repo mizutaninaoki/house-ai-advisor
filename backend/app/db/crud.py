@@ -231,4 +231,47 @@ def delete_proposal_point(db: Session, point_id: int):
         db.delete(db_point)
         db.commit()
         return True
-    return False 
+    return False
+
+# 協議書（Agreement）CRUD
+def create_agreement(db: Session, agreement: schemas.AgreementCreate):
+    db_agreement = models.Agreement(
+        project_id=agreement.project_id,
+        proposal_id=agreement.proposal_id,
+        content=agreement.content,
+        status=agreement.status,
+        is_signed=agreement.is_signed
+    )
+    db.add(db_agreement)
+    db.commit()
+    db.refresh(db_agreement)
+    return db_agreement
+
+def get_agreement_by_project(db: Session, project_id: int):
+    return db.query(models.Agreement).filter(models.Agreement.project_id == project_id).first()
+
+def update_agreement(db: Session, agreement_id: int, agreement_update: schemas.AgreementUpdate):
+    db_agreement = db.query(models.Agreement).filter(models.Agreement.id == agreement_id).first()
+    if not db_agreement:
+        return None
+    for field, value in agreement_update.dict(exclude_unset=True).items():
+        setattr(db_agreement, field, value)
+    db.commit()
+    db.refresh(db_agreement)
+    return db_agreement
+
+# 署名（Signature）CRUD
+def create_signature(db: Session, signature: schemas.SignatureCreate):
+    db_signature = models.Signature(
+        agreement_id=signature.agreement_id,
+        user_id=signature.user_id,
+        method=signature.method,
+        value=signature.value
+    )
+    db.add(db_signature)
+    db.commit()
+    db.refresh(db_signature)
+    return db_signature
+
+def get_signatures_by_agreement(db: Session, agreement_id: int):
+    return db.query(models.Signature).filter(models.Signature.agreement_id == agreement_id).all() 

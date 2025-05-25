@@ -134,3 +134,35 @@ class Issue(Base):
     project = relationship("Project", back_populates="issues")
     
     # 関連メッセージIDは別テーブルで管理するか、JSON形式で保存することも検討できます
+
+# 協議書（Agreement）モデル
+class Agreement(Base):
+    __tablename__ = "agreements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    proposal_id = Column(Integer, ForeignKey("proposals.id", ondelete="SET NULL"), nullable=True)
+    content = Column(Text, nullable=False)
+    status = Column(String, default="draft")  # draft, finalized, signed など
+    is_signed = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # リレーションシップ
+    project = relationship("Project")
+    proposal = relationship("Proposal")
+
+# 署名（Signature）モデル
+class Signature(Base):
+    __tablename__ = "signatures"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agreement_id = Column(Integer, ForeignKey("agreements.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    method = Column(String, nullable=False)  # 'pin' or 'text'
+    value = Column(String, nullable=False)   # PINまたは氏名
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # リレーションシップ
+    agreement = relationship("Agreement")
+    user = relationship("User")

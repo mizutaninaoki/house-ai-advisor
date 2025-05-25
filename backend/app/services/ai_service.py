@@ -333,3 +333,47 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
                 extracted_issues.append(issue)
     
     return extracted_issues
+
+def generate_agreement_content_with_llm(project_title: str, proposal_content: str) -> str:
+    """
+    Gemini LLMを使って協議書本文を生成する
+    Args:
+        project_title: プロジェクト（相続案件）のタイトル
+        proposal_content: 提案内容（本文）
+    Returns:
+        str: 生成された協議書本文
+    """
+    try:
+        initialize_google_ai()
+        prompt = f"""
+あなたは遺産分割協議書の作成を支援するAIです。
+以下のプロジェクトタイトルと提案内容をもとに、正式な日本語の遺産分割協議書の本文を作成してください。
+
+【プロジェクトタイトル】
+{project_title}
+
+【提案内容】
+{proposal_content}
+
+【出力フォーマット】
+- 冒頭に「遺産分割協議書」と明記
+- 合意に至った経緯や背景を簡潔にまとめる
+- 分割内容を明確に記載（例：不動産・預貯金の分割方法など）
+- 署名欄の案内文も含める
+
+【注意事項】
+- 法的な文書としてふさわしい丁寧な日本語で書くこと
+- 箇条書きではなく、文章形式でまとめること
+- 参加者全員が合意したことを明記すること
+- 必要十分な内容を含めるが、A4で10ページを超えるような長文にはしないこと（通常は1〜2ページ程度を想定）
+"""
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        # 先頭・末尾の不要な改行やコードブロックを除去
+        text = text.replace('```', '').strip()
+        return text
+    except Exception as e:
+        print(f"Gemini協議書生成エラー: {e}")
+        return f"遺産分割協議書\n\n{project_title}に関する協議の結果、以下の内容で合意しました。\n{proposal_content}\n\n本協議書の内容に全員が合意し、署名します。"

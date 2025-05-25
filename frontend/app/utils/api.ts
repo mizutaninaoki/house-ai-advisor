@@ -1062,4 +1062,68 @@ export const proposalPointsApi = {
     }
     return await response.json();
   },
+};
+
+// 協議書（Agreement）関連のAPI
+export const agreementApi = {
+  // AIで協議書を生成し保存
+  generateAgreementAI: async (projectId: number, proposalId: number) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agreements/ai/generate?project_id=${projectId}&proposal_id=${proposalId}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // body: JSON.stringify({ project_id: projectId, proposal_id: proposalId }), // クエリパラメータで送信するのでbody不要
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`協議書AI生成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // プロジェクトの協議書を取得
+  getAgreementByProject: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/agreements/by_project?project_id=${projectId}`);
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error(`協議書取得に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // 協議書を更新
+  updateAgreement: async (agreementId: number, data: { content?: string; status?: string; is_signed?: boolean }) => {
+    const response = await fetch(`${API_BASE_URL}/api/agreements/${agreementId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`協議書更新に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+};
+
+// 署名（Signature）関連のAPI
+export const signatureApi = {
+  // 署名を作成
+  createSignature: async (data: { agreement_id: number; user_id: number; method: string; value: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/signatures/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`署名作成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // 協議書ごとの署名リスト取得
+  getSignaturesByAgreement: async (agreementId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/signatures/by_agreement?agreement_id=${agreementId}`);
+    if (!response.ok) {
+      throw new Error(`署名リスト取得に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
 }; 

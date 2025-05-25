@@ -12,8 +12,11 @@ import {
   proposalApi,
   conversationApi,
   issueApi,
-  generateProposals
+  generateProposals,
+  agreementApi,
+  signatureApi
 } from '@/app/utils/api';
+import AgreementPreview from '@/app/components/AgreementPreview';
 
 interface Project {
   id: number;
@@ -72,6 +75,17 @@ interface Signature {
 // タブの型定義
 type TabType = 'conversation' | 'discussion' | 'proposal' | 'signature';
 
+interface Agreement {
+  id: number;
+  project_id: number;
+  proposal_id?: number;
+  content: string;
+  status: string;
+  is_signed: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
 export default function ProjectDetail() {
   const params = useParams();
   const projectId = params.id ? parseInt(params.id as string) : 0;
@@ -87,95 +101,136 @@ export default function ProjectDetail() {
   const [signingPin, setSigningPin] = useState(''); // 署名PIN
   const [isAiProcessing, setIsAiProcessing] = useState(false); // AI処理中フラグ
   const [isExtractingIssues, setIsExtractingIssues] = useState(false); // 論点生成中フラグ
+  // 協議書作成用に選択された提案
+  const [selectedAgreementProposal, setSelectedAgreementProposal] = useState<Proposal | null>(null);
+  // 協議書（Agreement）状態
+  const [agreement, setAgreement] = useState<Agreement | null>(null);
+  const [agreementContent, setAgreementContent] = useState('');
+  const [isEditingAgreement, setIsEditingAgreement] = useState(false);
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  // プレビュー表示用の状態
+  const [showAgreementPreview, setShowAgreementPreview] = useState(false);
   
   useEffect(() => {
-    const fetchProjectData = async () => {
-      try {
-        setLoading(true);
-        // プロジェクト詳細の取得
-        const projectData = await projectApi.getProject(projectId);
-        setProject(projectData);
-        
-        // プロジェクトに関連する提案の取得
-        const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId);
-        // APIレスポンスを適切なProposal型に変換
-        const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
-          id: proposal.id.toString(),
-          title: proposal.title || '無題の提案',
-          description: proposal.content || '',
-          supportRate: proposal.support_rate || 0,
-          points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
-            id: pt.id ?? idx,
-            type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
-            content: pt.content
-          })),
-          selected: proposal.is_selected || false,
-          is_favorite: Boolean(proposal.is_favorite),
-        }))
-        .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
-        setProposals(formattedProposals);
-        
-        // 会話履歴の取得
+    // プロジェクトデータ取得
+    if (!isNaN(projectId) && projectId > 0 && loading) {
+      const fetchProjectData = async () => {
         try {
-          const conversationData = await conversationApi.getConversation(projectId);
-          
-          // バックエンドでソート済みのデータをそのまま使用
-          setMessages(conversationData);
-          
-          // 会話履歴がない場合、最初のAIメッセージを表示
-          if (conversationData.length === 0) {
+          setLoading(true);
+          // プロジェクト詳細の取得
+          const projectData = await projectApi.getProject(projectId);
+          setProject(projectData);
+          // プロジェクトに関連する提案の取得
+          const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId);
+          const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+            id: proposal.id.toString(),
+            title: proposal.title || '無題の提案',
+            description: proposal.content || '',
+            supportRate: proposal.support_rate || 0,
+            points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+              id: pt.id ?? idx,
+              type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+              content: pt.content
+            })),
+            selected: proposal.is_selected || false,
+            is_favorite: Boolean(proposal.is_favorite),
+          }))
+          .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+          setProposals(formattedProposals);
+          // 会話履歴の取得
+          try {
+            const conversationData = await conversationApi.getConversation(projectId);
+            setMessages(conversationData);
+            if (conversationData.length === 0) {
+              setTimeout(() => {
+                displayInitialAiMessage(projectData);
+              }, 1000);
+            }
+          } catch (convErr) {
+            console.error('会話データ取得エラー:', convErr);
             setTimeout(() => {
               displayInitialAiMessage(projectData);
-            }, 1000); // 少し遅延させて表示
+            }, 1000);
           }
-        } catch (convErr) {
-          console.error('会話データ取得エラー:', convErr);
-          // 会話データが取得できなくても、初期メッセージを表示
-          setTimeout(() => {
-            displayInitialAiMessage(projectData);
-          }, 1000);
-        }
-        
-        // 論点データの取得
-        try {
-          const issuesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/issues?project_id=${projectId}`);
-          if (issuesData.ok) {
-            const issues = await issuesData.json();
-            setIssues(issues);
+          // 論点データの取得
+          try {
+            const issuesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/issues?project_id=${projectId}`);
+            if (issuesData.ok) {
+              const issues = await issuesData.json();
+              setIssues(issues);
+            }
+          } catch (issueErr) {
+            console.error('論点データ取得エラー:', issueErr);
           }
-        } catch (issueErr) {
-          console.error('論点データ取得エラー:', issueErr);
-          // 論点データが取得できなくても、他の機能は使えるようにエラーをスローしない
-        }
-        
-        // 署名情報の取得
-        try {
-          const signaturesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/signatures?project_id=${projectId}`);
-          if (signaturesData.ok) {
-            const signatures = await signaturesData.json();
-            setSignatures(signatures);
+          // 署名情報の取得
+          try {
+            const signaturesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/signatures?project_id=${projectId}`);
+            if (signaturesData.ok) {
+              const signatures = await signaturesData.json();
+              setSignatures(signatures);
+            }
+          } catch (signErr) {
+            console.error('署名データ取得エラー:', signErr);
           }
-        } catch (signErr) {
-          console.error('署名データ取得エラー:', signErr);
-          // 署名データが取得できなくても、他の機能は使えるようにエラーをスローしない
+          setError(null);
+        } catch (err) {
+          console.error('データ取得エラー:', err);
+          setError('プロジェクトデータの取得に失敗しました');
+        } finally {
+          setLoading(false);
         }
-        
-        setError(null);
-      } catch (err) {
-        console.error('データ取得エラー:', err);
-        setError('プロジェクトデータの取得に失敗しました');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (!isNaN(projectId) && projectId > 0) {
+      };
       fetchProjectData();
-    } else {
-      setError('無効なプロジェクトIDです');
-      setLoading(false);
+      return;
     }
-  }, [projectId]);
+
+    // プロジェクトデータ取得後の論点取得
+    if (project && !loading) {
+      const fetchIssues = async () => {
+        try {
+          const issuesData = await issueApi.getIssues(projectId);
+          setIssues(issuesData);
+        } catch (error) {
+          console.error('論点データ取得エラー:', error);
+        }
+      };
+      fetchIssues();
+    }
+
+    // 署名タブ表示時の協議書取得・生成
+    if (activeTab === 'signature') {
+      setAgreementLoading(true);
+      (async () => {
+        try {
+          const data = await agreementApi.getAgreementByProject(projectId);
+          if (data) {
+            setAgreement(data);
+            setAgreementContent(data.content);
+            // 署名リストも取得
+            const sigs = await signatureApi.getSignaturesByAgreement(data.id);
+            setSignatures(sigs);
+          } else if (selectedAgreementProposal) {
+            const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(selectedAgreementProposal.id));
+            setAgreement(aiAgreement);
+            setAgreementContent(aiAgreement.content);
+            // 署名リストも取得
+            const sigs = await signatureApi.getSignaturesByAgreement(aiAgreement.id);
+            setSignatures(sigs);
+          } else {
+            setAgreement(null);
+            setAgreementContent('');
+            setSignatures([]);
+          }
+        } catch {
+          setAgreement(null);
+          setAgreementContent('');
+          setSignatures([]);
+        } finally {
+          setAgreementLoading(false);
+        }
+      })();
+    }
+  }, [projectId, loading, project, activeTab, selectedAgreementProposal]);
 
   // プロジェクト情報を基に初期AIメッセージを表示
   const displayInitialAiMessage = (projectData: Project) => {
@@ -429,53 +484,29 @@ export default function ProjectDetail() {
     }
   };
 
-  // 論点データの初期読み込み
-  useEffect(() => {
-    // プロジェクトデータ取得後、論点データも取得
-    if (project && !loading) {
-      const fetchIssues = async () => {
-        try {
-          const issuesData = await issueApi.getIssues(projectId);
-          setIssues(issuesData);
-        } catch (error) {
-          console.error('論点データ取得エラー:', error);
-          // エラーが発生しても他の機能に影響しないようにする
-        }
-      };
-      
-      fetchIssues();
-    }
-  }, [project, projectId, loading]);
-
   // 署名処理
   const handleSign = async () => {
     if (!signingPin || signingPin.length < 4) {
       setError('署名PINは4桁以上で入力してください');
       return;
     }
-
+    if (!agreement) {
+      setError('協議書が存在しません');
+      return;
+    }
     try {
       setLoading(true);
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/signatures`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          project_id: projectId,
-          user_name: 'テストユーザー', // 実際のユーザー名を使用
-          pin: signingPin,
-        }),
+      // 仮のuser_id: 1、method: 'pin'、value: signingPin
+      await signatureApi.createSignature({
+        agreement_id: agreement.id,
+        user_id: 1, // TODO: 実際のログインユーザーIDに置き換え
+        method: 'pin',
+        value: signingPin,
       });
-
-      if (!response.ok) {
-        throw new Error('署名処理に失敗しました');
-      }
-
-      const result = await response.json();
-      // 署名リストを更新
-      setSignatures([...signatures, result]);
-      setSigningPin(''); // PINをリセット
+      // 署名リストを再取得
+      const updatedSignatures = await signatureApi.getSignaturesByAgreement(agreement.id);
+      setSignatures(updatedSignatures);
+      setSigningPin('');
       setError(null);
     } catch (err) {
       console.error('署名エラー:', err);
@@ -948,152 +979,100 @@ export default function ProjectDetail() {
           <p className="text-gray-600 text-sm">最終提案に基づいた協議書への電子署名</p>
         </div>
       </div>
-      
-      <div className="bg-indigo-50 rounded-lg p-5 border border-indigo-200 mb-8">
-        <div className="flex items-start">
-          <div className="bg-indigo-100 rounded-full p-2 mr-4 mt-1">
-            <svg className="w-6 h-6 text-indigo-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-          </div>
-          <div>
-            <h3 className="font-medium text-indigo-800 mb-2">電子署名について</h3>
-            <p className="text-indigo-700 text-sm">
-              この電子署名は<span className="font-medium">法的効力</span>を持ちます。署名することで、あなたは協議書の内容に同意したことになります。
-              全員の署名が完了すると、正式な遺産分割協議書として効力が発生します。
-            </p>
+
+      {/* --- 協議書用紙風カード --- */}
+      <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
+        <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">遺産分割協議書</h2>
+        <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
+        <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent || '協議書がありません'}</div>
+        <div className="border-t border-gray-300 pt-6 mt-6">
+          <div className="flex flex-col gap-4">
+            {['テストユーザー', '山田花子', '田中太郎'].map(name => {
+              const sig = signatures.find(s => s.user_name === name && s.status === 'signed');
+              return (
+                <div key={name} className="flex items-center gap-4 relative min-h-[40px]">
+                  <span className="w-32 text-right text-gray-700">{name}</span>
+                  <span className="flex-1 border-b border-gray-400 h-6 relative"></span>
+                  {sig ? (
+                    <span
+                      className="absolute left-40 -top-2 text-red-600 font-bold text-lg rounded-full border-2 border-red-400 px-4 py-1 bg-white rotate-[-12deg] shadow-md select-none"
+                      style={{ zIndex: 2 }}
+                    >
+                      承認
+                    </span>
+                  ) : (
+                    <span className="ml-2 text-gray-400 text-xs">署名待ち</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
-      </div>
-      
-      <div className="mb-8">
-        <h3 className="font-medium text-lg flex items-center mb-4">
-          <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-          </svg>
-          署名状況
-        </h3>
-        <div className="overflow-hidden bg-white shadow sm:rounded-lg border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  名前
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ステータス
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  署名日時
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              <tr className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                      <span className="text-indigo-800 font-medium">テ</span>
-                    </div>
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">テストユーザー</div>
-                      <div className="text-sm text-gray-500">あなた</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {signatures.find(s => s.user_name === 'テストユーザー') ? (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                      署名済み
-                    </span>
-                  ) : (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                      署名待ち
-                    </span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {signatures.find(s => s.user_name === 'テストユーザー')?.signed_at ? 
-                    new Date(signatures.find(s => s.user_name === 'テストユーザー')!.signed_at).toLocaleDateString() + ' ' + 
-                    new Date(signatures.find(s => s.user_name === 'テストユーザー')!.signed_at).toLocaleTimeString() : 
-                    '-'}
-                </td>
-              </tr>
-              <tr className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 bg-pink-100 rounded-full flex items-center justify-center">
-                      <span className="text-pink-800 font-medium">花</span>
-                    </div>
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">山田花子</div>
-                      <div className="text-sm text-gray-500">関係者</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {signatures.find(s => s.user_name === '山田花子') ? (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                      署名済み
-                    </span>
-                  ) : (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                      署名待ち
-                    </span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {signatures.find(s => s.user_name === '山田花子')?.signed_at ? 
-                    new Date(signatures.find(s => s.user_name === '山田花子')!.signed_at).toLocaleDateString() + ' ' + 
-                    new Date(signatures.find(s => s.user_name === '山田花子')!.signed_at).toLocaleTimeString() : 
-                    '-'}
-                </td>
-              </tr>
-              <tr className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <span className="text-blue-800 font-medium">太</span>
-                    </div>
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">田中太郎</div>
-                      <div className="text-sm text-gray-500">関係者</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {signatures.find(s => s.user_name === '田中太郎') ? (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                      署名済み
-                    </span>
-                  ) : (
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                      署名待ち
-                    </span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {signatures.find(s => s.user_name === '田中太郎')?.signed_at ? 
-                    new Date(signatures.find(s => s.user_name === '田中太郎')!.signed_at).toLocaleDateString() + ' ' + 
-                    new Date(signatures.find(s => s.user_name === '田中太郎')!.signed_at).toLocaleTimeString() : 
-                    '-'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        {/* 協議書編集・プレビュー */}
+        <div className="flex gap-2 mt-8 justify-end">
+          {/* 編集ボタンは「自分が署名済みでない場合のみ」表示 */}
+          {!isEditingAgreement && agreement && !signatures.find(s => s.user_name === 'テストユーザー' && s.status === 'signed') && (
+            <button className="px-3 py-1 bg-indigo-500 text-white rounded" onClick={() => setIsEditingAgreement(true)} disabled={agreementLoading}>編集</button>
+          )}
+          <button
+            className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+            onClick={() => setShowAgreementPreview(true)}
+            disabled={!agreement}
+          >
+            協議書プレビュー
+          </button>
         </div>
+        {/* 協議書プレビュー（モーダル） */}
+        {showAgreementPreview && agreement && (
+          <AgreementPreview
+            projectName={project?.title || ''}
+            projectDescription={project?.description || ''}
+            members={[]}
+            proposals={[{
+              id: agreement.proposal_id?.toString() || '',
+              title: proposals.find(p => p.id === agreement.proposal_id?.toString())?.title || '',
+              description: proposals.find(p => p.id === agreement.proposal_id?.toString())?.description || '',
+              supportRate: proposals.find(p => p.id === agreement.proposal_id?.toString())?.supportRate || 0
+            }]}
+            createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
+            signatures={signatures.map(s => ({
+              id: s.id.toString(),
+              name: s.user_name,
+              isComplete: s.status === 'signed',
+              date: s.signed_at ? new Date(s.signed_at) : undefined
+            }))}
+            onClose={() => setShowAgreementPreview(false)}
+          />
+        )}
+        {/* 編集モード */}
+        {isEditingAgreement && (
+          <div className="mt-6">
+            <textarea
+              className="w-full border rounded p-2 mb-2"
+              rows={8}
+              value={agreementContent}
+              onChange={e => setAgreementContent(e.target.value)}
+              placeholder="協議書の内容を入力してください"
+              title="協議書内容"
+            />
+            <div className="flex gap-2">
+              <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={handleSaveAgreement} disabled={agreementLoading}>保存</button>
+              <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setAgreementContent(agreement?.content || ''); }}>キャンセル</button>
+            </div>
+          </div>
+        )}
       </div>
-      
-      {/* 署名入力エリア */}
+      {/* --- ここまで協議書用紙風カード --- */}
+
+      {/* 署名PIN入力エリア（未署名ユーザーのみ） */}
       {!signatures.find(s => s.user_name === 'テストユーザー') && (
-        <div className="bg-white border-2 border-indigo-200 rounded-lg p-6 mb-6 shadow-sm">
+        <div className="bg-white border-2 border-indigo-200 rounded-lg p-6 mb-6 shadow-sm max-w-2xl mx-auto">
           <h3 className="font-medium text-lg mb-4 flex items-center">
             <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
             </svg>
             あなたの署名を入力してください
           </h3>
-          
           <div className="mb-4">
             <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
               署名用PIN（4桁以上）
@@ -1107,6 +1086,7 @@ export default function ProjectDetail() {
                 placeholder="署名用PINを入力"
                 className="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 pl-10"
                 minLength={4}
+                autoFocus
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1115,7 +1095,6 @@ export default function ProjectDetail() {
               </div>
             </div>
           </div>
-          
           <button
             onClick={handleSign}
             disabled={signingPin.length < 4 || loading}
@@ -1140,10 +1119,10 @@ export default function ProjectDetail() {
           </button>
         </div>
       )}
-      
+
       {/* 署名済みメッセージ */}
       {signatures.find(s => s.user_name === 'テストユーザー') && (
-        <div className="border-green-500 border-2 rounded-lg p-6 mb-6 bg-green-50">
+        <div className="max-w-2xl mx-auto border-green-500 border-2 rounded-lg p-6 mb-6 bg-green-50 flex flex-col items-center">
           <div className="flex items-center mb-4">
             <div className="bg-green-100 p-2 rounded-full mr-3">
               <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1161,7 +1140,7 @@ export default function ProjectDetail() {
           </p>
         </div>
       )}
-      
+
       <div className="mt-6 border-t border-gray-200 pt-4">
         <p className="text-sm text-gray-600 flex items-start">
           <svg className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1241,10 +1220,10 @@ export default function ProjectDetail() {
       ) : (
         <div>
           {/* ローディング中案内 */}
-          {isAiProcessing && (
+          {agreementLoading && (
             <div className="flex flex-col items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-green-500 mb-3"></div>
-              <p className="text-gray-600">AIが提案を生成中です。しばらくお待ちください…</p>
+              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-indigo-500 mb-3"></div>
+              <p className="text-gray-600">協議書をAIが作成中です。しばらくお待ちください…</p>
             </div>
           )}
           {/* 提案フィルター/ソートオプション */}
@@ -1269,6 +1248,7 @@ export default function ProjectDetail() {
                 onToggleFavorite={() => handleToggleFavorite(parseInt(proposal.id))}
                 onDelete={() => handleDeleteProposal(parseInt(proposal.id))}
                 onUpdate={handleProposalUpdate}
+                onSelectForAgreement={handleSelectForAgreement}
               />
             ))}
           </div>
@@ -1334,6 +1314,40 @@ export default function ProjectDetail() {
     }))
     .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
     setProposals(formattedProposals);
+  };
+
+  // 協議書作成ボタン押下時のハンドラ
+  const handleSelectForAgreement = async (proposal: Proposal) => {
+    setAgreementLoading(true);
+    setError(null);
+    try {
+      // AIで協議書を生成しDB保存
+      const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(proposal.id));
+      setAgreement(aiAgreement);
+      setAgreementContent(aiAgreement.content);
+      setSelectedAgreementProposal(proposal); // どの提案を元にしたか記録用
+      setShowAgreementPreview(false); // プレビューは自動で開かない
+      setActiveTab('signature'); // 生成完了後に遷移
+    } catch {
+      setError('協議書の生成に失敗しました');
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  // 協議書保存ハンドラ
+  const handleSaveAgreement = async () => {
+    if (!agreement) return;
+    setAgreementLoading(true);
+    try {
+      const updated = await agreementApi.updateAgreement(agreement.id, { content: agreementContent });
+      setAgreement(updated);
+      setIsEditingAgreement(false);
+    } catch {
+      // エラー処理
+    } finally {
+      setAgreementLoading(false);
+    }
   };
 
   return (

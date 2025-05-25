@@ -25,6 +25,7 @@ interface ProposalCardProps {
   onToggleFavorite?: () => void;
   onDelete?: () => void;
   onUpdate?: (proposal: Proposal) => Promise<void>;
+  onSelectForAgreement?: (proposal: Proposal) => void;
 }
 
 export default function ProposalCard({ 
@@ -33,7 +34,8 @@ export default function ProposalCard({
   isVotingAllowed = true,
   onToggleFavorite,
   onDelete,
-  onUpdate
+  onUpdate,
+  onSelectForAgreement
 }: ProposalCardProps) {
   const { id, title, description, supportRate, selected, is_favorite } = proposal;
   const [points, setPoints] = useState<ProposalPoint[]>([]);
@@ -302,6 +304,16 @@ export default function ProposalCard({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                   <span className="text-sm">削除</span>
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 ml-auto">
+              {onSelectForAgreement && (
+                <button
+                  className="px-3 py-1 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-colors"
+                  onClick={() => onSelectForAgreement(proposal)}
+                >
+                  この提案で協議書を作成
                 </button>
               )}
             </div>

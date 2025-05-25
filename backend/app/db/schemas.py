@@ -172,6 +172,47 @@ class ProposalPoint(ProposalPointBase):
     class Config:
         from_attributes = True
 
+# 協議書（Agreement）スキーマ
+class AgreementBase(BaseSchema):
+    project_id: int
+    proposal_id: int | None = None
+    content: str
+    status: str = "draft"
+    is_signed: bool = False
+
+class AgreementCreate(AgreementBase):
+    pass
+
+class AgreementUpdate(BaseSchema):
+    content: str | None = None
+    status: str | None = None
+    is_signed: bool | None = None
+
+class Agreement(AgreementBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+# 署名（Signature）スキーマ
+class SignatureBase(BaseSchema):
+    agreement_id: int
+    user_id: int
+    method: str  # 'pin' or 'text'
+    value: str
+
+class SignatureCreate(SignatureBase):
+    pass
+
+class Signature(SignatureBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # 循環参照を解決するための更新
 ProjectDetail.update_forward_refs()
 ConversationDetail.update_forward_refs() 
