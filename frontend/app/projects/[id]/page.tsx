@@ -11,7 +11,8 @@ import {
   projectApi,
   proposalApi,
   conversationApi,
-  issueApi
+  issueApi,
+  proposalPointsApi
 } from '@/app/utils/api';
 
 interface Project {
@@ -1174,15 +1175,26 @@ export default function ProjectDetail() {
             <p className="text-gray-600 text-sm">ニーズに合わせた最適な住まい案</p>
           </div>
         </div>
-        <button
-          onClick={handleCreateProposal}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
-          </svg>
-          新しい提案を作成
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreateProposal}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            新しい提案を作成
+          </button>
+          <button
+            onClick={handleGenerateAiProposals}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 01-8 0M12 3v4m0 0a4 4 0 01-4 4H4m8-4a4 4 0 004 4h4"></path>
+            </svg>
+            AIで提案を作成
+          </button>
+        </div>
       </div>
       
       {/* 提案なしの場合 */}
@@ -1224,6 +1236,10 @@ export default function ProjectDetail() {
                 proposal={proposal}
                 onToggleFavorite={() => handleToggleFavorite(parseInt(proposal.id))}
                 onDelete={() => handleDeleteProposal(parseInt(proposal.id))}
+                onUpdate={handleProposalUpdate}
+                onPointAdd={handlePointAdd}
+                onPointUpdate={handlePointUpdate}
+                onPointDelete={handlePointDelete}
               />
             ))}
           </div>
@@ -1231,6 +1247,128 @@ export default function ProjectDetail() {
       )}
     </div>
   );
+
+  // AI提案生成ハンドラ
+  const handleGenerateAiProposals = async () => {
+    setIsAiProcessing(true);
+    try {
+      // 論点・会話履歴を取得
+      const issuesData = await issueApi.getIssues(projectId);
+      const issues = issuesData.map((issue: any) => ({
+        title: issue.topic || '',
+        description: issue.content,
+        agreement_score: issue.agreement_level === 'high' ? 80 : issue.agreement_level === 'medium' ? 50 : 20
+      }));
+      // AI生成API呼び出し
+      const aiResult = await proposalApi.generateProposals(projectId.toString(), issues);
+      // 返却された提案をDBに保存
+      for (const aiProposal of aiResult.proposals) {
+        const newProposal = await proposalApi.createProposal({
+          project_id: projectId,
+          title: aiProposal.title,
+          content: aiProposal.description
+        });
+        // ポイントも保存
+        if (aiProposal.points && Array.isArray(aiProposal.points)) {
+          for (const point of aiProposal.points) {
+            await proposalPointsApi.createPoint(newProposal.id, {
+              proposal_id: newProposal.id,
+              type: point.type,
+              content: point.content
+            });
+          }
+        }
+      }
+      // 再取得してリスト更新
+      const proposalsData = await proposalApi.getProposals(projectId);
+      const formattedProposals = proposalsData.map((proposal: any) => ({
+        id: proposal.id.toString(),
+        title: proposal.title || '無題の提案',
+        description: proposal.content || '',
+        supportRate: proposal.support_rate || 0,
+        points: proposal.points || [],
+        selected: proposal.is_selected || false
+      }));
+      setProposals(formattedProposals);
+      setError(null);
+    } catch (err) {
+      setError('AIによる提案生成に失敗しました');
+    } finally {
+      setIsAiProcessing(false);
+    }
+  };
+
+  // 提案カードのポイント操作ハンドラ
+  const handleProposalUpdate = async (proposal: Proposal) => {
+    await proposalApi.updateProposal(Number(proposal.id), {
+      title: proposal.title,
+      content: proposal.description
+    });
+    // 再取得してリスト更新
+    const proposalsData = await proposalApi.getProposals(projectId);
+    const formattedProposals = proposalsData.map((p: any) => ({
+      id: p.id.toString(),
+      title: p.title || '無題の提案',
+      description: p.content || '',
+      supportRate: p.support_rate || 0,
+      points: p.points || [],
+      selected: p.is_selected || false
+    }));
+    setProposals(formattedProposals);
+  };
+  const handlePointAdd = async (proposalId: string, type: 'merit' | 'demerit' | 'cost' | 'effort', content: string) => {
+    await proposalPointsApi.createPoint(Number(proposalId), {
+      proposal_id: Number(proposalId),
+      type,
+      content
+    });
+    // 再取得してリスト更新
+    const proposalsData = await proposalApi.getProposals(projectId);
+    const formattedProposals = proposalsData.map((p: any) => ({
+      id: p.id.toString(),
+      title: p.title || '無題の提案',
+      description: p.content || '',
+      supportRate: p.support_rate || 0,
+      points: p.points || [],
+      selected: p.is_selected || false
+    }));
+    setProposals(formattedProposals);
+  };
+  const handlePointUpdate = async (proposalId: string, index: number, content: string) => {
+    // ポイントID取得のため、まずポイント一覧取得
+    const points = await proposalPointsApi.getPoints(Number(proposalId));
+    const point = points[index];
+    if (!point) return;
+    await proposalPointsApi.updatePoint(point.id, { content });
+    // 再取得してリスト更新
+    const proposalsData = await proposalApi.getProposals(projectId);
+    const formattedProposals = proposalsData.map((p: any) => ({
+      id: p.id.toString(),
+      title: p.title || '無題の提案',
+      description: p.content || '',
+      supportRate: p.support_rate || 0,
+      points: p.points || [],
+      selected: p.is_selected || false
+    }));
+    setProposals(formattedProposals);
+  };
+  const handlePointDelete = async (proposalId: string, index: number) => {
+    const points = await proposalPointsApi.getPoints(Number(proposalId));
+    const point = points[index];
+    if (!point) return;
+    await proposalPointsApi.deletePoint(point.id);
+    // 再取得してリスト更新
+    const proposalsData = await proposalApi.getProposals(projectId);
+    const formattedProposals = proposalsData.map((p: any) => ({
+      id: p.id.toString(),
+      title: p.title || '無題の提案',
+      description: p.content || '',
+      supportRate: p.support_rate || 0,
+      points: p.points || [],
+      selected: p.is_selected || false
+    }));
+    setProposals(formattedProposals);
+  };
 
   return (
     <div className="min-h-screen flex flex-col">

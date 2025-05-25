@@ -203,4 +203,32 @@ def delete_project_issues(db: Session, project_id: int):
     for issue in issues:
         db.delete(issue)
     db.commit()
-    return True 
+    return True
+
+# 提案ポイント（ProposalPoint）関連CRUD
+def get_proposal_points(db: Session, proposal_id: int) -> list:
+    return db.query(models.ProposalPoint).filter(models.ProposalPoint.proposal_id == proposal_id).all()
+
+def create_proposal_point(db: Session, point: schemas.ProposalPointCreate):
+    db_point = models.ProposalPoint(**point.dict())
+    db.add(db_point)
+    db.commit()
+    db.refresh(db_point)
+    return db_point
+
+def update_proposal_point(db: Session, point_id: int, point_data: dict):
+    db_point = db.query(models.ProposalPoint).filter(models.ProposalPoint.id == point_id).first()
+    if db_point:
+        for key, value in point_data.items():
+            setattr(db_point, key, value)
+        db.commit()
+        db.refresh(db_point)
+    return db_point
+
+def delete_proposal_point(db: Session, point_id: int):
+    db_point = db.query(models.ProposalPoint).filter(models.ProposalPoint.id == point_id).first()
+    if db_point:
+        db.delete(db_point)
+        db.commit()
+        return True
+    return False 

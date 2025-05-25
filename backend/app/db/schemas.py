@@ -105,7 +105,6 @@ class ProposalBase(BaseSchema):
     project_id: int
     title: str
     content: str
-    image_url: Optional[str] = None
     is_favorite: bool = False
 
 class ProposalCreate(ProposalBase):
@@ -153,6 +152,23 @@ class Issue(IssueBase):
 
     class Config:
         orm_mode = True
+        from_attributes = True
+
+# 提案ポイント（メリット・デメリット等）スキーマ
+class ProposalPointBase(BaseSchema):
+    proposal_id: int
+    type: str  # 'merit', 'demerit', 'cost', 'effort' など
+    content: str
+
+class ProposalPointCreate(ProposalPointBase):
+    pass
+
+class ProposalPoint(ProposalPointBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
         from_attributes = True
 
 # 循環参照を解決するための更新

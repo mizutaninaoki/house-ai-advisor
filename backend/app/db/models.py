@@ -101,6 +101,20 @@ class Proposal(Base):
     
     # リレーションシップ
     project = relationship("Project", back_populates="proposals")
+    points = relationship("ProposalPoint", back_populates="proposal", cascade="all, delete-orphan")
+
+# 提案ポイント（メリット・デメリット等）モデル
+class ProposalPoint(Base):
+    __tablename__ = "proposal_points"
+    id = Column(Integer, primary_key=True, index=True)
+    proposal_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String, nullable=False)  # 'merit', 'demerit', 'cost', 'effort' など
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # リレーションシップ
+    proposal = relationship("Proposal", back_populates="points")
 
 # 論点（Issue）モデル
 class Issue(Base):

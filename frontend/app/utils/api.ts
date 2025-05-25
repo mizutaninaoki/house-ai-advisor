@@ -548,7 +548,6 @@ export const proposalApi = {
     project_id: number, 
     title: string, 
     content: string,
-    image_url?: string,
     is_favorite?: boolean
   }) => {
     const response = await fetch(`${API_BASE_URL}/api/proposals/`, {
@@ -592,6 +591,21 @@ export const proposalApi = {
       throw new Error(`提案削除に失敗しました: ${response.statusText}`);
     }
     
+    return await response.json();
+  },
+  
+  // 提案の更新
+  updateProposal: async (proposalId: number, proposalData: { title: string, content: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proposalData),
+    });
+    if (!response.ok) {
+      throw new Error(`提案の更新に失敗しました: ${response.statusText}`);
+    }
     return await response.json();
   },
 };
@@ -1002,4 +1016,50 @@ export const issueApi = {
       throw error;
     }
   }
+};
+
+// 提案ポイント（ProposalPoint）関連のAPI
+export const proposalPointsApi = {
+  // 指定提案のポイント一覧取得
+  getPoints: async (proposalId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}/points`);
+    if (!response.ok) {
+      throw new Error(`ポイント一覧の取得に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント追加
+  createPoint: async (proposalId: number, pointData: { proposal_id: number; type: string; content: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}/points`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pointData),
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント作成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント更新
+  updatePoint: async (pointId: number, pointData: { type?: string; content?: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/points/${pointId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pointData),
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント更新に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント削除
+  deletePoint: async (pointId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/points/${pointId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント削除に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
 }; 

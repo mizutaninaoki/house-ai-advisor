@@ -285,4 +285,33 @@ def delete_proposal(proposal_id: int, db: Session = Depends(get_db)):
     success = crud.delete_proposal(db, proposal_id=proposal_id)
     if not success:
         raise HTTPException(status_code=404, detail="提案が見つかりません")
+    return success
+
+# ===== 提案ポイント（ProposalPoint）API =====
+@router.get("/{proposal_id}/points", response_model=List[schemas.ProposalPoint], tags=["DB ProposalPoints"])
+def get_proposal_points(proposal_id: int, db: Session = Depends(get_db)):
+    """指定した提案のポイント一覧を取得"""
+    return crud.get_proposal_points(db, proposal_id=proposal_id)
+
+@router.post("/{proposal_id}/points", response_model=schemas.ProposalPoint, tags=["DB ProposalPoints"])
+def create_proposal_point(proposal_id: int, point: schemas.ProposalPointCreate, db: Session = Depends(get_db)):
+    """提案にポイントを追加"""
+    if point.proposal_id != proposal_id:
+        raise HTTPException(status_code=400, detail="proposal_idが一致しません")
+    return crud.create_proposal_point(db, point=point)
+
+@router.put("/points/{point_id}", response_model=schemas.ProposalPoint, tags=["DB ProposalPoints"])
+def update_proposal_point(point_id: int, point_data: dict, db: Session = Depends(get_db)):
+    """ポイントを更新"""
+    db_point = crud.update_proposal_point(db, point_id=point_id, point_data=point_data)
+    if db_point is None:
+        raise HTTPException(status_code=404, detail="ポイントが見つかりません")
+    return db_point
+
+@router.delete("/points/{point_id}", response_model=bool, tags=["DB ProposalPoints"])
+def delete_proposal_point(point_id: int, db: Session = Depends(get_db)):
+    """ポイントを削除"""
+    success = crud.delete_proposal_point(db, point_id=point_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="ポイントが見つかりません")
     return success 
