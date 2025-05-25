@@ -18,6 +18,14 @@ interface Heir {
   email: string;
 }
 
+// ProjectMember型（user_idを含む場合も許容）
+type ProjectMemberInput = {
+  email: string;
+  name: string;
+  relation: string;
+  user_id?: number;
+};
+
 export default function NewProject() {
   const { user, loading: authLoading, backendUserId } = useAuth();
   const [step, setStep] = useState(1);
@@ -94,11 +102,19 @@ export default function NewProject() {
         title: projectName,
         description: projectDescription,
         user_id: backendUserId,
-        members: heirs.map(h => ({
-          email: h.email,
-          name: h.name,
-          relation: h.relation
-        }))
+        members: [
+          {
+            user_id: backendUserId,
+            email: user.email || '',
+            name: user.displayName || '',
+            relation: '本人'
+          },
+          ...heirs.map(h => ({
+            email: h.email,
+            name: h.name,
+            relation: h.relation
+          }))
+        ] as ProjectMemberInput[]
       };
       console.log('プロジェクト作成リクエストデータ:', projectData);
       
@@ -289,6 +305,37 @@ export default function NewProject() {
                     <div className="w-1/3">メールアドレス</div>
                     <div className="w-1/6 text-right">操作</div>
                   </div>
+                  {/* ログインユーザー自身を先頭に表示 */}
+                  <div className="flex items-center mb-2 opacity-80">
+                    <input
+                      type="text"
+                      className="w-1/4 p-2 border border-gray-300 rounded-md mr-2 bg-gray-100"
+                      value={user?.displayName || ''}
+                      disabled
+                      title="ご本人の氏名"
+                      placeholder="ご本人の氏名"
+                    />
+                    <input
+                      type="text"
+                      className="w-1/4 p-2 border border-gray-300 rounded-md mr-2 bg-gray-100"
+                      value="本人"
+                      disabled
+                      title="ご本人の続柄"
+                      placeholder="本人"
+                    />
+                    <input
+                      type="email"
+                      className="w-1/3 p-2 border border-gray-300 rounded-md mr-2 bg-gray-100"
+                      value={user?.email || ''}
+                      disabled
+                      title="ご本人のメールアドレス"
+                      placeholder="ご本人のメールアドレス"
+                    />
+                    <div className="w-1/6 text-right">
+                      <button type="button" className="text-gray-400 cursor-not-allowed" disabled>削除</button>
+                    </div>
+                  </div>
+                  {/* 以降、heirs.mapで他の相続人を表示 */}
                   {heirs.map((heir, idx) => (
                     <div key={heir.id} className="flex items-center mb-2">
                       <input
@@ -335,6 +382,9 @@ export default function NewProject() {
                     ＋相続人を追加
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  ※操作しているご本人（ログインユーザー）は必ず相続人として登録されます（編集・削除不可）
+                </p>
                 <div className="flex justify-between mt-6">
                   <button
                     type="button"

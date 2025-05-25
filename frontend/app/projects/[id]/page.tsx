@@ -676,7 +676,7 @@ export default function ProjectDetail() {
               </div>
               <div className="flex justify-between px-2 mb-2">
                 <div className="w-1/3 text-center text-xs text-rose-700">{userMessages.filter(m => m.sentiment === 'negative').length}件</div>
-                <div className="w-1/3 text-center text-xs text-sky-700">{userMessages.filter(m => m.sentiment === 'neutral').length}件</div>
+                <div className="w-1/3 text-center text-xs text-yellow-600">{userMessages.filter(m => m.sentiment === 'neutral').length}件</div>
                 <div className="w-1/3 text-center text-xs text-emerald-700">{userMessages.filter(m => m.sentiment === 'positive').length}件</div>
               </div>
               <div className="text-sm text-gray-600">
