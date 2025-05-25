@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
-import ProposalCard, { Proposal } from '@/app/components/ProposalCard';
+import ProposalCard, { Proposal, ProposalPoint } from '@/app/components/ProposalCard';
 import VoiceRecorder from '@/app/components/VoiceRecorder';
 import { 
   projectApi,
@@ -104,8 +104,13 @@ export default function ProjectDetail() {
           title: proposal.title || '無題の提案',
           description: proposal.content || '',
           supportRate: proposal.support_rate || 0,
-          points: proposal.points || [],
-          selected: proposal.is_selected || false
+          points: (proposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+            id: pt.id ?? idx,
+            type: pt.type,
+            content: pt.content
+          })),
+          selected: proposal.is_selected || false,
+          is_favorite: Boolean(proposal.is_favorite),
         }));
         setProposals(formattedProposals);
         
@@ -222,7 +227,7 @@ export default function ProjectDetail() {
       
       // 提案リストを更新
       setProposals(proposals.map(p => 
-        p.id === proposalId.toString() ? { ...p, selected: Boolean(updatedProposal.is_selected) } : p
+        p.id === proposalId.toString() ? { ...p, is_favorite: Boolean(updatedProposal.is_favorite) } : p
       ));
     } catch (err) {
       console.error('お気に入り更新エラー:', err);
@@ -258,7 +263,12 @@ export default function ProjectDetail() {
         title: newProposal.title || '無題の提案',
         description: newProposal.content || '',
         supportRate: newProposal.support_rate || 0,
-        points: newProposal.points || []
+        points: (newProposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+          id: pt.id ?? idx,
+          type: pt.type,
+          content: pt.content
+        })),
+        is_favorite: Boolean(newProposal.is_favorite),
       };
       
       setProposals([...proposals, formattedProposal]);
@@ -1224,7 +1234,7 @@ export default function ProjectDetail() {
             <div className="text-sm text-gray-700">
               <span className="font-medium">提案件数: {proposals.length}件</span>
               <span className="mx-3">|</span>
-              <span className="text-indigo-600 font-medium">お気に入り: {proposals.filter(p => p.selected).length}件</span>
+              <span className="text-indigo-600 font-medium">お気に入り: {proposals.filter(p => p.is_favorite).length}件</span>
             </div>
           </div>
                 
@@ -1237,9 +1247,6 @@ export default function ProjectDetail() {
                 onToggleFavorite={() => handleToggleFavorite(parseInt(proposal.id))}
                 onDelete={() => handleDeleteProposal(parseInt(proposal.id))}
                 onUpdate={handleProposalUpdate}
-                onPointAdd={handlePointAdd}
-                onPointUpdate={handlePointUpdate}
-                onPointDelete={handlePointDelete}
               />
             ))}
           </div>
@@ -1254,13 +1261,13 @@ export default function ProjectDetail() {
     try {
       // 論点・会話履歴を取得
       const issuesData = await issueApi.getIssues(projectId);
-      const issues = issuesData.map((issue: any) => ({
-        title: issue.topic || '',
-        description: issue.content,
-        agreement_score: issue.agreement_level === 'high' ? 80 : issue.agreement_level === 'medium' ? 50 : 20
-      }));
+      // const issues = issuesData.map((issue: any) => ({
+      //   title: issue.topic || '',
+      //   description: issue.content,
+      //   agreement_score: issue.agreement_level === 'high' ? 80 : issue.agreement_level === 'medium' ? 50 : 20
+      // }));
       // AI生成API呼び出し
-      const aiResult = await proposalApi.generateProposals(projectId.toString(), issues);
+      const aiResult = await proposalApi.getProposals(projectId);
       // 返却された提案をDBに保存
       for (const aiProposal of aiResult.proposals) {
         const newProposal = await proposalApi.createProposal({
@@ -1286,8 +1293,13 @@ export default function ProjectDetail() {
         title: proposal.title || '無題の提案',
         description: proposal.content || '',
         supportRate: proposal.support_rate || 0,
-        points: proposal.points || [],
-        selected: proposal.is_selected || false
+        points: (proposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+          id: pt.id ?? idx,
+          type: pt.type,
+          content: pt.content
+        })),
+        selected: proposal.is_selected || false,
+        is_favorite: Boolean(proposal.is_favorite),
       }));
       setProposals(formattedProposals);
       setError(null);
@@ -1311,61 +1323,13 @@ export default function ProjectDetail() {
       title: p.title || '無題の提案',
       description: p.content || '',
       supportRate: p.support_rate || 0,
-      points: p.points || [],
-      selected: p.is_selected || false
-    }));
-    setProposals(formattedProposals);
-  };
-  const handlePointAdd = async (proposalId: string, type: 'merit' | 'demerit' | 'cost' | 'effort', content: string) => {
-    await proposalPointsApi.createPoint(Number(proposalId), {
-      proposal_id: Number(proposalId),
-      type,
-      content
-    });
-    // 再取得してリスト更新
-    const proposalsData = await proposalApi.getProposals(projectId);
-    const formattedProposals = proposalsData.map((p: any) => ({
-      id: p.id.toString(),
-      title: p.title || '無題の提案',
-      description: p.content || '',
-      supportRate: p.support_rate || 0,
-      points: p.points || [],
-      selected: p.is_selected || false
-    }));
-    setProposals(formattedProposals);
-  };
-  const handlePointUpdate = async (proposalId: string, index: number, content: string) => {
-    // ポイントID取得のため、まずポイント一覧取得
-    const points = await proposalPointsApi.getPoints(Number(proposalId));
-    const point = points[index];
-    if (!point) return;
-    await proposalPointsApi.updatePoint(point.id, { content });
-    // 再取得してリスト更新
-    const proposalsData = await proposalApi.getProposals(projectId);
-    const formattedProposals = proposalsData.map((p: any) => ({
-      id: p.id.toString(),
-      title: p.title || '無題の提案',
-      description: p.content || '',
-      supportRate: p.support_rate || 0,
-      points: p.points || [],
-      selected: p.is_selected || false
-    }));
-    setProposals(formattedProposals);
-  };
-  const handlePointDelete = async (proposalId: string, index: number) => {
-    const points = await proposalPointsApi.getPoints(Number(proposalId));
-    const point = points[index];
-    if (!point) return;
-    await proposalPointsApi.deletePoint(point.id);
-    // 再取得してリスト更新
-    const proposalsData = await proposalApi.getProposals(projectId);
-    const formattedProposals = proposalsData.map((p: any) => ({
-      id: p.id.toString(),
-      title: p.title || '無題の提案',
-      description: p.content || '',
-      supportRate: p.support_rate || 0,
-      points: p.points || [],
-      selected: p.is_selected || false
+      points: (p.points || []).map((pt: any, idx: number): ProposalPoint => ({
+        id: pt.id ?? idx,
+        type: pt.type,
+        content: pt.content
+      })),
+      selected: p.is_selected || false,
+      is_favorite: Boolean(p.is_favorite),
     }));
     setProposals(formattedProposals);
   };
