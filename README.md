@@ -30,6 +30,10 @@ cd house-ai-advisor
 cd backend
 # 事前に配布したenvファイルを.envとして配置してください
 cd ..
+
+cd frontend
+# 事前に配布したenv.localファイルを.env.localとして配置してください
+cd ..
 ```
 
 3. Docker Composeで一発起動（マイグレーション自動実行）
