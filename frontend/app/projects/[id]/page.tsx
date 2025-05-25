@@ -119,6 +119,7 @@ export default function ProjectDetail() {
   
   const { backendUserId } = useAuth();
   const hasInitializedConversation = useRef(false); // 追加
+  const userName = useAuth().user?.displayName || "テストユーザー";
 
   useEffect(() => {
     // プロジェクトデータ取得
@@ -376,7 +377,7 @@ export default function ProjectDetail() {
       const result = await conversationApi.transcribeAndSave(
         projectId,
         audioBlob,
-        'テストユーザー' // 実際のユーザー名を使用
+        userName // 実際のユーザー名を使用
       );
       
       // メッセージリストに追加
@@ -574,7 +575,7 @@ export default function ProjectDetail() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={true} userName="テストユーザー" />
+        <Header isLoggedIn={true} userName={userName} />
         <main className="flex-grow bg-gray-50 flex justify-center items-center">
           <p className="text-gray-600">読み込み中...</p>
         </main>
@@ -586,7 +587,7 @@ export default function ProjectDetail() {
   if (error || !project) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={true} userName="テストユーザー" />
+        <Header isLoggedIn={true} userName={userName} />
         <main className="flex-grow bg-gray-50 flex flex-col justify-center items-center p-4">
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 max-w-lg w-full">
             <p>{error || 'プロジェクトが見つかりませんでした'}</p>
@@ -604,21 +605,22 @@ export default function ProjectDetail() {
   }
 
   // 会話タブのコンテンツ
-  const ConversationTab = () => (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="mb-6">
-        <div className="flex items-center mb-4">
-          <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
-          </svg>
-          <div>
-            <h2 className="text-xl font-semibold">会話</h2>
-            <p className="text-gray-600 text-sm">相続に関するヒアリングを進めています。AIの質問に音声で回答してください。</p>
+  const ConversationTab = () => {
+    const userName = useAuth().user?.displayName || "テストユーザー";
+    const userMessages = messages.filter(m => m.speaker === userName);
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+            </svg>
+            <div>
+              <h2 className="text-xl font-semibold">会話</h2>
+              <p className="text-gray-600 text-sm">相続に関するヒアリングを進めています。AIの質問に音声で回答してください。</p>
+            </div>
           </div>
-        </div>
-        
-        {/* 感情分析の概要表示 */}
-        {messages.length > 2 && (
+          {/* 感情分析の概要表示 */}
           <div className="mb-6">
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-lg font-medium mb-2">感情分析の概要</h3>
@@ -629,15 +631,15 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-rose-500 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${messages.filter(m => m.sentiment === 'negative').length / Math.max(messages.length, 1) * 100}%`,
+                      width: `${userMessages.filter(m => m.sentiment === 'negative').length / Math.max(userMessages.length, 1) * 100}%`,
                       borderTopLeftRadius: '9999px',
                       borderBottomLeftRadius: '9999px',
-                      marginRight: messages.filter(m => m.sentiment === 'neutral').length > 0 ? '2px' : messages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                      marginRight: userMessages.filter(m => m.sentiment === 'neutral').length > 0 ? '2px' : userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
                     }}
                   >
-                    {messages.filter(m => m.sentiment === 'negative').length > 0 && (
+                    {userMessages.filter(m => m.sentiment === 'negative').length > 0 && (
                       <span className="drop-shadow-sm">
-                        否定的 {messages.filter(m => m.sentiment === 'negative').length}件
+                        否定的 {userMessages.filter(m => m.sentiment === 'negative').length}件
                       </span>
                     )}
                   </div>
@@ -645,13 +647,13 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-yellow-400 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${messages.filter(m => m.sentiment === 'neutral').length / Math.max(messages.length, 1) * 100}%`,
-                      marginRight: messages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                      width: `${userMessages.filter(m => m.sentiment === 'neutral').length / Math.max(userMessages.length, 1) * 100}%`,
+                      marginRight: userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
                     }}
                   >
-                    {messages.filter(m => m.sentiment === 'neutral').length > 0 && (
+                    {userMessages.filter(m => m.sentiment === 'neutral').length > 0 && (
                       <span className="drop-shadow-sm">
-                        中立的 {messages.filter(m => m.sentiment === 'neutral').length}件
+                        中立的 {userMessages.filter(m => m.sentiment === 'neutral').length}件
                       </span>
                     )}
                   </div>
@@ -659,129 +661,129 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-emerald-500 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${messages.filter(m => m.sentiment === 'positive').length / Math.max(messages.length, 1) * 100}%`,
+                      width: `${userMessages.filter(m => m.sentiment === 'positive').length / Math.max(userMessages.length, 1) * 100}%`,
                       borderTopRightRadius: '9999px',
                       borderBottomRightRadius: '9999px',
                     }}
                   >
-                    {messages.filter(m => m.sentiment === 'positive').length > 0 && (
+                    {userMessages.filter(m => m.sentiment === 'positive').length > 0 && (
                       <span className="drop-shadow-sm">
-                        肯定的 {messages.filter(m => m.sentiment === 'positive').length}件
+                        肯定的 {userMessages.filter(m => m.sentiment === 'positive').length}件
                       </span>
                     )}
                   </div>
                 </div>
               </div>
               <div className="flex justify-between px-2 mb-2">
-                <div className="w-1/3 text-center text-xs text-rose-700">{messages.filter(m => m.sentiment === 'negative').length}件</div>
-                <div className="w-1/3 text-center text-xs text-sky-700">{messages.filter(m => m.sentiment === 'neutral').length}件</div>
-                <div className="w-1/3 text-center text-xs text-emerald-700">{messages.filter(m => m.sentiment === 'positive').length}件</div>
+                <div className="w-1/3 text-center text-xs text-rose-700">{userMessages.filter(m => m.sentiment === 'negative').length}件</div>
+                <div className="w-1/3 text-center text-xs text-sky-700">{userMessages.filter(m => m.sentiment === 'neutral').length}件</div>
+                <div className="w-1/3 text-center text-xs text-emerald-700">{userMessages.filter(m => m.sentiment === 'positive').length}件</div>
               </div>
               <div className="text-sm text-gray-600">
                 会話の中で表明された感情の傾向を表しています。これらの情報は論点抽出や提案作成に活用されます。
               </div>
             </div>
           </div>
-        )}
-        
-        {/* 会話メッセージ表示エリア - 方向を逆転させた設計 */}
-        <div 
-          className="border rounded-lg mb-6 h-96 max-h-screen bg-gray-50 resize-y cursor-ns-resize flex flex-col-reverse relative"
-          style={{ overflow: 'auto' }}
-        >
-          {/* ローディングインジケーター - 絶対位置で下部中央に固定 */}
-          {(isAiProcessing || transcription === '音声を処理中...') && (
-            <div className="absolute bottom-4 left-0 right-0 flex justify-center">
-              <div className="bg-white bg-opacity-90 rounded-full shadow-md px-4 py-2 flex items-center space-x-2">
-                <div className="animate-pulse flex space-x-1">
-                  <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
-                  <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
-                  <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
-                </div>
-                <span className="text-xs text-gray-700 font-medium">
-                  {isAiProcessing ? 'AI相談員が回答を考えています...' : '音声を処理中...'}
-                </span>
-              </div>
-            </div>
-          )}
           
-          {/* メッセージコンテナ - 逆方向に表示され、常に最新が見える */}
-          <div className="p-4 w-full">
-            {messages.length === 0 ? (
-              <div className="text-center py-8 w-full">
-                <p className="text-gray-500 mb-4">AIによるヒアリングを開始します...</p>
-                <div className="flex justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+          {/* 会話メッセージ表示エリア - 方向を逆転させた設計 */}
+          <div 
+            className="border rounded-lg mb-6 h-96 max-h-screen bg-gray-50 resize-y cursor-ns-resize flex flex-col-reverse relative"
+            style={{ overflow: 'auto' }}
+          >
+            {/* ローディングインジケーター - 絶対位置で下部中央に固定 */}
+            {(isAiProcessing || transcription === '音声を処理中...') && (
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+                <div className="bg-white bg-opacity-90 rounded-full shadow-md px-4 py-2 flex items-center space-x-2">
+                  <div className="animate-pulse flex space-x-1">
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                  </div>
+                  <span className="text-xs text-gray-700 font-medium">
+                    {isAiProcessing ? 'AI相談員が回答を考えています...' : '音声を処理中...'}
+                  </span>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4 w-full">
-                {/* 録音・処理中表示を削除（固定ローディングに移動） */}
-                
-                {/* メッセージ表示 - 逆順ではなく正順で表示 */}
-                {messages.map((message) => (
-                  <div 
-                    key={message.id} 
-                    className={`flex ${message.speaker === 'テストユーザー' ? 'justify-end' : 'justify-start'}`}
-                  >
+            )}
+            
+            {/* メッセージコンテナ - 逆方向に表示され、常に最新が見える */}
+            <div className="p-4 w-full">
+              {messages.length === 0 ? (
+                <div className="text-center py-8 w-full">
+                  <p className="text-gray-500 mb-4">AIによるヒアリングを開始します...</p>
+                  <div className="flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 w-full">
+                  {/* 録音・処理中表示を削除（固定ローディングに移動） */}
+                  
+                  {/* メッセージ表示 - 逆順ではなく正順で表示 */}
+                  {messages.map((message) => (
                     <div 
-                      className={`max-w-[70%] rounded-lg p-3 ${
-                        message.speaker === 'テストユーザー' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
+                      key={message.id} 
+                      className={`flex ${message.speaker === userName ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div className="flex justify-between items-center mb-1">
-                        <div className="font-semibold text-sm">{message.speaker}</div>
-                        {message.sentiment && message.speaker === 'テストユーザー' && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            message.sentiment === 'positive' ? 'bg-green-100 text-green-800' :
-                            message.sentiment === 'negative' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {message.sentiment === 'positive' ? '肯定的' :
-                             message.sentiment === 'negative' ? '否定的' : '中立的'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm">{message.content}</p>
-                      <div className="text-xs text-right mt-1 text-gray-500">
-                        {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      <div 
+                        className={`max-w-[70%] rounded-lg p-3 ${
+                          message.speaker === userName 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="font-semibold text-sm">{message.speaker}</div>
+                          {message.sentiment && message.speaker === userName && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              message.sentiment === 'positive' ? 'bg-green-100 text-green-800' :
+                              message.sentiment === 'negative' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {message.sentiment === 'positive' ? '肯定的' :
+                               message.sentiment === 'negative' ? '否定的' : '中立的'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm">{message.content}</p>
+                        <div className="text-xs text-right mt-1 text-gray-500">
+                          {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        
-        {/* 音声入力コントロール - 独立したフォームとして分離 */}
-        <div className="border-t pt-4">
-          <div className="flex flex-col items-center justify-center">
-            <VoiceRecorder onRecordingComplete={handleRecordingComplete} />
-            
-            {transcription && (
-              <div className="mt-4 p-3 bg-gray-100 rounded-lg w-full">
-                <p className="text-gray-700">{transcription}</p>
+          
+          {/* 音声入力コントロール - 独立したフォームとして分離 */}
+          <div className="border-t pt-4">
+            <div className="flex flex-col items-center justify-center">
+              <VoiceRecorder onRecordingComplete={handleRecordingComplete} />
+              
+              {transcription && (
+                <div className="mt-4 p-3 bg-gray-100 rounded-lg w-full">
+                  <p className="text-gray-700">{transcription}</p>
+                </div>
+              )}
+              
+              <div className="flex space-x-4 mt-4">
+                <button 
+                  type="button"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  onClick={handleExtractIssues}
+                  disabled={messages.length < 3}
+                >
+                  会話から論点をまとめる
+                </button>
               </div>
-            )}
-            
-            <div className="flex space-x-4 mt-4">
-              <button 
-                type="button"
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-                onClick={handleExtractIssues}
-                disabled={messages.length < 3}
-              >
-                会話から論点をまとめる
-              </button>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // 論点タブのコンテンツ
   const DiscussionTab = () => (
@@ -1323,7 +1325,7 @@ export default function ProjectDetail() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header isLoggedIn={true} userName="テストユーザー" />
+      <Header isLoggedIn={true} userName={userName} />
       <main className="flex-grow bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-6">
