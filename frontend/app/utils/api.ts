@@ -379,14 +379,23 @@ export const userApi = {
   // Firebase UIDでユーザーを検索
   getUserByFirebaseUid: async (firebaseUid: string) => {
     const response = await fetch(`${API_BASE_URL}/api/users/firebase/${firebaseUid}`);
-    
     if (!response.ok) {
       if (response.status === 404) {
         return null; // ユーザーが見つからない場合はnullを返す
       }
       throw new Error(`ユーザー検索に失敗しました: ${response.statusText}`);
     }
-    
+    return await response.json();
+  },
+  
+  // ユーザー削除
+  deleteUser: async (userId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`ユーザー削除に失敗しました: ${response.statusText}`);
+    }
     return await response.json();
   },
   

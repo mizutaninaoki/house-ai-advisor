@@ -56,4 +56,14 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
     db_user = crud.get_user(db, user_id=user_id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
-    return db_user 
+    return db_user
+
+@router.delete("/{user_id}", response_model=bool)
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """ユーザーを削除する"""
+    db_user = crud.get_user(db, user_id=user_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+    db.delete(db_user)
+    db.commit()
+    return True 
