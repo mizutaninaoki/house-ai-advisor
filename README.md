@@ -9,9 +9,9 @@
 - **Backend**: FastAPI製のREST APIサーバー
 - **Frontend**: Next.js製のWebアプリケーション
 
-## 立ち上げ方法（Docker Compose）
+## 立ち上げ方法（Docker Compose推奨・マイグレーション自動実行対応）
 
-Docker Composeを使うと、バックエンドとフロントエンドを一度に簡単に起動できます。
+Docker Composeを使うと、**バックエンド（マイグレーション自動実行）・フロントエンド・DB**を一度に簡単に起動できます。
 
 ### 必要条件
 - Docker
@@ -28,94 +28,44 @@ cd house-ai-advisor
 2. 環境変数の設定
 ```bash
 cd backend
-# 事前に配布したファイルを.envとして設定してください
+# 事前に配布したenvファイルを.envとして配置してください
+cd ..
 ```
 
-3. Docker Composeで起動
+3. Docker Composeで一発起動（マイグレーション自動実行）
 ```bash
-cd ..  # プロジェクトのルートディレクトリに戻る
-docker-compose up
+docker compose up
 ```
-（バックエンドは http://localhost:8000、 フロントエンドは http://localhost:3000 で起動します。)
+- バックエンド（FastAPI）は http://localhost:8000
+- フロントエンド（Next.js）は http://localhost:3000
 
 4. http://localhost:3000 にアクセス
-トップ画面が表示されたらOK
+トップ画面が表示されたらOKです。
 
+> **注意**: 初回起動時はDBマイグレーション（alembic upgrade head）が自動で実行されます。他の開発者もマイグレーションを意識せず立ち上げ可能です。
 
-
-> **注意**: フロントエンドのコードには一部ESLintエラーがありますが、開発環境では問題なく動作します。本番環境にデプロイする前に修正することをお勧めします。
-
-## 個別環境での立ち上げ方法
+## 個別環境での立ち上げ方法（開発用）
 
 ### 必要条件
-
 - Node.js (v18以上)とnpm（フロントエンド開発用）
 - Python 3.11（バックエンド開発用）
 - pipenv (Pythonパッケージ管理用)
 
-### 前提ソフトウェアのインストール
-
-#### Node.jsのインストール
-
-Node.jsがインストールされていない場合は、[Node.js公式サイト](https://nodejs.org/)からインストーラーをダウンロードしてインストールしてください。
-
-```bash
-# バージョン確認
-node -v
-npm -v
-```
-
-#### Pythonとpipenvのインストール
-
-1. [Python公式サイト](https://www.python.org/downloads/)からPython 3.11をインストール
-2. pipenvのインストール:
-
-```bash
-# pipenvのインストール
-pip install pipenv
-
-# バージョン確認
-pipenv --version
-```
-
-### バックエンド環境構築
-
+### バックエンド
 ```bash
 cd backend
-
-# 環境変数ファイルの準備
-# ※ 事前に配布したファイルを設定してください
-
-# 必要に応じて.envファイルを編集して環境設定を行う
-# 特にAPI_MODE、GOOGLE_APPLICATION_CREDENTIALS、GEMINI_API_KEYなどの設定を確認
-
-# pipenvで仮想環境と依存パッケージをインストール
 pipenv install
-
-# 開発サーバーの起動
-pipenv run dev
+# .envファイルを配置
+alembic upgrade head  # マイグレーション適用
+pipenv run dev        # 開発サーバー起動
 ```
 
-バックエンドサーバーは http://localhost:8000 で実行されます。
-
-#### 重要: API認証情報の設定
-
-- Google Cloud Speech APIとGemini APIを利用するには、適切な認証情報が必要です
-- `.env`ファイル内の`GOOGLE_APPLICATION_CREDENTIALS`と`GEMINI_API_KEY`を設定してください
-
-### フロントエンド環境構築
-
+### フロントエンド
 ```bash
 cd frontend
-
-# 依存パッケージのインストール
 npm install
-
-# 開発サーバーの起動
 npm run dev
 ```
-
-フロントエンドアプリケーションは http://localhost:3000 で実行されます。
 
 ## APIエンドポイント
 
@@ -124,23 +74,19 @@ npm run dev
 - `/api/speech` - 音声処理関連
 - `/api/analysis` - 感情分析、論点抽出関連
 - `/api/proposals` - AI提案生成関連
+- `/api/projects` - プロジェクト管理
+- `/api/issues` - 論点管理
+- `/api/agreements` - 協議書管理
+- `/api/signatures` - 署名管理
 
 詳細なAPIドキュメントは http://localhost:8000/docs で確認できます。
 
 ## トラブルシューティング
 
-### Docker関連
-
 - **Dockerが起動しない**: Dockerデーモンが実行されているか確認してください
-- **ポートがすでに使用されている**: 8000番や3000番ポートが他のアプリケーションで使用されていないか確認してください
-- **Volumeマウントエラー**: Dockerの共有設定を確認してください
-
-### ローカル環境
-
+- **ポート競合**: 8000番や3000番ポートが他のアプリケーションで使用されていないか確認してください
 - **pipenvコマンドが見つからない**: `pip install pipenv`でpipenvをインストールしてください
-- **Node.jsのバージョンエラー**: `nvm`や`n`などのバージョン管理ツールを使用してNode.jsのバージョンを切り替えてください
 - **APIキーの設定エラー**: `.env`ファイル内の認証情報が正しく設定されているか確認してください
-- **APIアクセスエラー**: CORSの設定が正しいか確認してください
 
 ## 開発者向け情報
 
