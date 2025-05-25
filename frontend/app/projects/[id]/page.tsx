@@ -84,6 +84,7 @@ interface Agreement {
   id: number;
   project_id: number;
   proposal_id?: number;
+  title?: string; // 追加
   content: string;
   status: string;
   is_signed: boolean;
@@ -977,6 +978,15 @@ export default function ProjectDetail() {
       }
     };
 
+    // 編集用ローカルstate
+    const [editingContent, setEditingContent] = useState(agreementContent);
+    // 編集開始時のみ初期値をセット
+    useEffect(() => {
+      if (isEditingAgreement) {
+        setEditingContent(agreementContent);
+      }
+    }, [isEditingAgreement]);
+
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center mb-6">
@@ -992,7 +1002,7 @@ export default function ProjectDetail() {
         {/* --- 協議書用紙風カード or 案内メッセージ --- */}
         {agreement && agreementContent ? (
           <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
-            <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">遺産分割協議書</h2>
+            <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">{agreement.title || 'サンプルタイトル'}</h2>
             <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
             <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent}</div>
             {/* ▼▼▼ 相続人ごとの署名状況 横並びリスト表示 ▼▼▼ */}
@@ -1061,6 +1071,7 @@ export default function ProjectDetail() {
               <AgreementPreview
                 projectName={project?.title || ''}
                 projectDescription={project?.description || ''}
+                agreementTitle={agreement.title || ''} // 追加
                 members={[]}
                 proposals={[{
                   id: agreement.proposal_id?.toString() || '',
@@ -1083,14 +1094,14 @@ export default function ProjectDetail() {
                 <textarea
                   className="w-full border rounded p-2 mb-2"
                   rows={8}
-                  value={agreementContent}
-                  onChange={e => setAgreementContent(e.target.value)}
+                  value={editingContent}
+                  onChange={e => setEditingContent(e.target.value)}
                   placeholder="協議書の内容を入力してください"
                   title="協議書内容"
                 />
                 <div className="flex gap-2">
-                  <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={handleSaveAgreement} disabled={agreementLoading}>保存</button>
-                  <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setAgreementContent(agreement?.content || ''); }}>キャンセル</button>
+                  <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={() => { setAgreementContent(editingContent); handleSaveAgreement(); }} disabled={agreementLoading}>保存</button>
+                  <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setEditingContent(agreementContent); }}>キャンセル</button>
                 </div>
               </div>
             )}
@@ -1102,7 +1113,7 @@ export default function ProjectDetail() {
           </div>
         )}
         {/* 署名入力フォーム or 署名済み表示 */}
-        <div className="max-w-md mx-auto mt-10">
+        <div className="max-w-2xl mx-auto mt-10">
           <SignatureInput
             onComplete={handleSignatureComplete}
             isComplete={!!mySignature}

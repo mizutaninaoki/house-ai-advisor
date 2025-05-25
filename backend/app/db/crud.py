@@ -240,6 +240,7 @@ def create_agreement(db: Session, agreement: schemas.AgreementCreate):
     db_agreement = models.Agreement(
         project_id=agreement.project_id,
         proposal_id=agreement.proposal_id,
+        title=agreement.title,
         content=agreement.content,
         status=agreement.status,
         is_signed=agreement.is_signed

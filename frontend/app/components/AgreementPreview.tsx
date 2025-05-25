@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 interface AgreementPreviewProps {
   projectName: string;
   projectDescription: string;
+  agreementTitle: string;
   members: Array<{id: string, name: string, role: string}>;
   proposals: Array<{id: string, title: string, description: string, supportRate: number}>;
   createdAt: Date;
@@ -14,6 +15,7 @@ interface AgreementPreviewProps {
 export default function AgreementPreview({
   projectName,
   projectDescription,
+  agreementTitle,
   members,
   proposals,
   createdAt,
@@ -59,7 +61,7 @@ export default function AgreementPreview({
         
         <div className="p-8">
           <div className="text-center mb-12">
-            <h1 className="text-3xl font-bold mb-2">遺産分割協議書</h1>
+            <h1 className="text-3xl font-bold mb-2">{agreementTitle || '遺産分割協議書'}</h1>
             <p className="text-gray-500">作成日: {createdAt.toLocaleDateString('ja-JP')}</p>
           </div>
           

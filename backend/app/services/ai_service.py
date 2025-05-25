@@ -334,14 +334,14 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
     
     return extracted_issues
 
-def generate_agreement_content_with_llm(project_title: str, proposal_content: str) -> str:
+def generate_agreement_content_with_llm(project_title: str, proposal_content: str) -> dict:
     """
-    Gemini LLMを使って協議書本文を生成する
+    Gemini LLMを使って協議書タイトルと本文を生成する
     Args:
         project_title: プロジェクト（相続案件）のタイトル
         proposal_content: 提案内容（本文）
     Returns:
-        str: 生成された協議書本文
+        dict: {"title": タイトル, "content": 本文}
     """
     try:
         initialize_google_ai()
@@ -362,6 +362,7 @@ def generate_agreement_content_with_llm(project_title: str, proposal_content: st
 - 署名欄の案内文も含める
 
 【注意事項】
+- 協議書本文以外の説明や前置きは一切出力せず、正式な協議書本文のみを出力してください。
 - 法的な文書としてふさわしい丁寧な日本語で書くこと
 - 箇条書きではなく、文章形式でまとめること
 - 参加者全員が合意したことを明記すること
@@ -371,9 +372,16 @@ def generate_agreement_content_with_llm(project_title: str, proposal_content: st
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
         text = response.text.strip()
-        # 先頭・末尾の不要な改行やコードブロックを除去
         text = text.replace('```', '').strip()
-        return text
+        # 1行目をタイトル、それ以降を本文とする
+        lines = text.splitlines()
+        if lines:
+            title = lines[0].strip()
+            content = "\n".join(lines[1:]).strip()
+        else:
+            title = "遺産分割協議書"
+            content = text
+        return {"title": title, "content": content}
     except Exception as e:
         print(f"Gemini協議書生成エラー: {e}")
-        return f"遺産分割協議書\n\n{project_title}に関する協議の結果、以下の内容で合意しました。\n{proposal_content}\n\n本協議書の内容に全員が合意し、署名します。"
+        return {"title": "遺産分割協議書", "content": f"{project_title}に関する協議の結果、以下の内容で合意しました。\n{proposal_content}\n\n本協議書の内容に全員が合意し、署名します。"}

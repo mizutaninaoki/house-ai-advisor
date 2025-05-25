@@ -16,15 +16,16 @@ def generate_agreement_ai(
     proposal = db.query(models.Proposal).filter(models.Proposal.id == proposal_id).first()
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    # Gemini LLMで協議書本文を生成
-    agreement_content = ai_service.generate_agreement_content_with_llm(
+    # Gemini LLMで協議書タイトルと本文を生成
+    agreement_result = ai_service.generate_agreement_content_with_llm(
         project_title=proposal.title,
         proposal_content=proposal.content
     )
     agreement_in = schemas.AgreementCreate(
         project_id=project_id,
         proposal_id=proposal_id,
-        content=agreement_content,
+        title=agreement_result["title"],
+        content=agreement_result["content"],
         status="draft",
         is_signed=False
     )

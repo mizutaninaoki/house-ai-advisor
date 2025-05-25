@@ -182,6 +182,7 @@ class ProposalPoint(ProposalPointBase):
 class AgreementBase(BaseSchema):
     project_id: int
     proposal_id: int | None = None
+    title: Optional[str] = None
     content: str
     status: str = "draft"
     is_signed: bool = False
@@ -190,6 +191,7 @@ class AgreementCreate(AgreementBase):
     pass
 
 class AgreementUpdate(BaseSchema):
+    title: Optional[str] = None
     content: str | None = None
     status: str | None = None
     is_signed: bool | None = None

@@ -142,6 +142,7 @@ class Agreement(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     proposal_id = Column(Integer, ForeignKey("proposals.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String, nullable=True)
     content = Column(Text, nullable=False)
     status = Column(String, default="draft")  # draft, finalized, signed など
     is_signed = Column(Boolean, default=False)
