@@ -167,7 +167,7 @@ class Signature(Base):
     agreement = relationship("Agreement")
     user = relationship("User")
 
-# プロジェクトメンバー中間テーブル
+# プロジェクトメンバー
 class ProjectMember(Base):
     __tablename__ = "project_members"
     id = Column(Integer, primary_key=True)

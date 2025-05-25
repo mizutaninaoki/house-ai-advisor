@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { CheckCircleIcon } from '@heroicons/react/24/solid';
 
 interface SignatureInputProps {
   onComplete: (method: 'pin' | 'text', value: string) => void;
   isComplete?: boolean;
+  method?: 'pin' | 'text';
+  value?: string;
 }
 
-export default function SignatureInput({ onComplete, isComplete = false }: SignatureInputProps) {
+export default function SignatureInput({ onComplete, isComplete = false, method, value }: SignatureInputProps) {
   const [signMethod, setSignMethod] = useState<'pin' | 'text'>('pin');
   const [pinValue, setPinValue] = useState('');
   const [textValue, setTextValue] = useState('');
@@ -32,12 +33,38 @@ export default function SignatureInput({ onComplete, isComplete = false }: Signa
     );
   };
 
-  if (isComplete) {
+  if (isComplete && method && value) {
     return (
-      <div className="border border-green-500 bg-green-50 rounded-lg p-4 flex items-center justify-center flex-col">
-        <CheckCircleIcon className="h-8 w-8 text-green-500 mb-2" />
-        <span className="text-green-700 font-medium text-lg">署名完了</span>
-        <p className="text-green-600 mt-2 text-center">ありがとうございます。署名が正常に処理されました。</p>
+      <div className="border border-green-500 bg-green-50 rounded-lg p-4 flex flex-col items-center">
+        <span className="text-green-700 font-medium text-lg mb-2">署名済み</span>
+        <div className="w-full max-w-xs mb-2">
+          {method === 'pin' ? (
+            <>
+              <label className="block text-sm font-medium text-gray-700 mb-1">署名用PIN</label>
+              <input
+                type="password"
+                className="w-full p-2 border border-gray-300 rounded-md bg-gray-100"
+                value={value.replace(/./g, '●')}
+                disabled
+                title="署名用PIN"
+                placeholder="署名用PIN"
+              />
+            </>
+          ) : (
+            <>
+              <label className="block text-sm font-medium text-gray-700 mb-1">氏名署名</label>
+              <input
+                type="text"
+                className="w-full p-2 border border-gray-300 rounded-md bg-gray-100"
+                value={value}
+                disabled
+                title="氏名署名"
+                placeholder="氏名署名"
+              />
+            </>
+          )}
+        </div>
+        <p className="text-green-600 text-sm">この内容で署名しました</p>
       </div>
     );
   }
