@@ -10,6 +10,14 @@ import EstateRegistrationForm, { EstateData } from '@/app/components/EstateRegis
 import { projectApi } from '@/app/utils/api';
 import { useAuth } from '@/app/auth/AuthContext';
 
+// Heir型を簡素化
+interface Heir {
+  id: string;
+  name: string;
+  relation: string;
+  email: string;
+}
+
 export default function NewProject() {
   const { user, loading: authLoading, backendUserId } = useAuth();
   const [step, setStep] = useState(1);
@@ -19,6 +27,9 @@ export default function NewProject() {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [heirs, setHeirs] = useState<Heir[]>([
+    { id: Date.now().toString(), name: '', relation: '', email: '' }
+  ]);
   const router = useRouter();
   
   useEffect(() => {
@@ -120,6 +131,22 @@ export default function NewProject() {
   
   const prevStep = () => {
     setStep(step - 1);
+  };
+  
+  // 相続人入力変更
+  const handleHeirChange = (index: number, field: keyof Heir, value: string) => {
+    setHeirs(prev => prev.map((h, i) => i === index ? { ...h, [field]: value } : h));
+  };
+
+  // 相続人追加
+  const handleAddHeir = () => {
+    setHeirs(prev => [...prev, { id: Date.now().toString(), name: '', relation: '', email: '' }]);
+  };
+
+  // 相続人削除
+  const handleDeleteHeir = (index: number) => {
+    if (heirs.length === 1) return; // 1人は必須
+    setHeirs(prev => prev.filter((_, i) => i !== index));
   };
   
   if (loading) {
@@ -247,11 +274,85 @@ export default function NewProject() {
             
             {step === 3 && (
               <div>
-                <h2 className="text-xl font-semibold text-gray-800 mb-4">プロジェクト作成の完了</h2>
-                <p className="text-gray-600 mb-6">
-                  プロジェクト情報の登録が完了しました。次のステップは「相続人の招待」です。
-                </p>
-                
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">相続人登録</h2>
+                <p className="text-gray-600 mb-6">相続人の氏名・続柄・メールアドレスを入力してください。1人以上必須、複数人登録できます。</p>
+                <div className="mb-6">
+                  <div className="flex font-semibold text-gray-700 border-b pb-2 mb-2">
+                    <div className="w-1/4">氏名</div>
+                    <div className="w-1/4">続柄</div>
+                    <div className="w-1/3">メールアドレス</div>
+                    <div className="w-1/6 text-right">操作</div>
+                  </div>
+                  {heirs.map((heir, idx) => (
+                    <div key={heir.id} className="flex items-center mb-2">
+                      <input
+                        type="text"
+                        className="w-1/4 p-2 border border-gray-300 rounded-md mr-2"
+                        placeholder="例：山田太郎"
+                        value={heir.name}
+                        onChange={e => handleHeirChange(idx, 'name', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="text"
+                        className="w-1/4 p-2 border border-gray-300 rounded-md mr-2"
+                        placeholder="例：長男"
+                        value={heir.relation}
+                        onChange={e => handleHeirChange(idx, 'relation', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="email"
+                        className="w-1/3 p-2 border border-gray-300 rounded-md mr-2"
+                        placeholder="例：example@email.com"
+                        value={heir.email}
+                        onChange={e => handleHeirChange(idx, 'email', e.target.value)}
+                        required
+                      />
+                      <div className="w-1/6 text-right">
+                        <button
+                          type="button"
+                          className={`text-red-500 hover:underline ${heirs.length === 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => handleDeleteHeir(idx)}
+                          disabled={heirs.length === 1}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="mt-2 bg-indigo-600 text-white py-1 px-4 rounded-md hover:bg-indigo-700 transition-colors"
+                    onClick={handleAddHeir}
+                  >
+                    ＋相続人を追加
+                  </button>
+                </div>
+                <div className="flex justify-between mt-6">
+                  <button
+                    type="button"
+                    onClick={prevStep}
+                    className="text-gray-600 py-2 px-4 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    戻る
+                  </button>
+                  <button
+                    type="button"
+                    className={`bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors ${(heirs.some(h => !h.name.trim() || !h.relation.trim() || !h.email.trim())) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={() => { if (heirs.every(h => h.name.trim() && h.relation.trim() && h.email.trim())) setStep(4); }}
+                    disabled={heirs.some(h => !h.name.trim() || !h.relation.trim() || !h.email.trim())}
+                  >
+                    次へ
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {step === 4 && (
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">プロジェクト内容の確認</h2>
+                <p className="text-gray-600 mb-6">下記の内容で新しい相続プロジェクトを作成します。内容に誤りがないかご確認のうえ、「プロジェクトを作成」ボタンを押してください。</p>
                 <div className="bg-gray-50 p-4 rounded-md mb-6">
                   <h3 className="font-medium text-gray-700 mb-2">登録内容</h3>
                   <div className="space-y-2">
@@ -262,9 +363,16 @@ export default function NewProject() {
                     {estateData && (
                       <p><span className="text-gray-500">不動産:</span> {estateData.address}</p>
                     )}
+                    <div>
+                      <span className="text-gray-500">相続人:</span>
+                      <ul className="list-disc ml-6">
+                        {heirs.map(h => (
+                          <li key={h.id}>{h.name}（{h.relation}）{h.email && ` - ${h.email}`}</li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
-                
                 <form onSubmit={handleProjectSubmit}>
                   <div className="flex justify-between">
                     <button
@@ -275,17 +383,12 @@ export default function NewProject() {
                     >
                       戻る
                     </button>
-                    
                     <button
                       type="submit"
-                      className={`
-                        bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 
-                        transition-colors flex items-center
-                        ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
-                      `}
+                      className={`bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors flex items-center ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                       disabled={isSubmitting}
                     >
-                      {isSubmitting ? '作成中...' : 'プロジェクトを作成して次へ'}
+                      {isSubmitting ? '作成中...' : 'プロジェクトを作成'}
                     </button>
                   </div>
                 </form>
