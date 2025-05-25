@@ -1071,14 +1071,10 @@ export default function ProjectDetail() {
               <AgreementPreview
                 projectName={project?.title || ''}
                 projectDescription={project?.description || ''}
-                agreementTitle={agreement.title || ''} // 追加
-                members={[]}
-                proposals={[{
-                  id: agreement.proposal_id?.toString() || '',
-                  title: proposals.find(p => p.id === agreement.proposal_id?.toString())?.title || '',
-                  description: proposals.find(p => p.id === agreement.proposal_id?.toString())?.description || '',
-                  supportRate: proposals.find(p => p.id === agreement.proposal_id?.toString())?.supportRate || 0
-                }]}
+                agreementTitle={agreement.title || ''}
+                agreementContent={agreementContent}
+                members={members.map(m => ({id: m.user_id.toString(), name: m.user_name, role: m.role}))}
+                proposals={[]}
                 createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
                 signatures={signatures.map(s => ({
                   id: s.id.toString(),
