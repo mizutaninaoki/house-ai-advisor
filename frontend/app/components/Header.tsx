@@ -34,7 +34,7 @@ export default function Header({ userName, isLoggedIn }: HeaderProps) {
   return (
     <header className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white p-4 shadow-md">
       <div className="container mx-auto flex justify-between items-center">
-        <Link href="/" className="text-xl font-bold flex items-center">
+        <Link href={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold flex items-center">
           <SparklesIcon className="h-6 w-6 mr-2" />
           おうちのAI相談室
         </Link>
