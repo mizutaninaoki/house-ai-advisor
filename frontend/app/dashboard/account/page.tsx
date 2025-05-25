@@ -1,14 +1,42 @@
 'use client';
 
-import { useState } from 'react';
-import { User } from 'firebase/auth';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/app/auth/AuthContext';
+import { userApi } from '@/app/utils/api';
 
 export default function AccountSettings() {
-  const [user] = useState<User | null>({ displayName: 'テストユーザー', email: 'test@example.com', uid: 'mock-user-id' } as User);
+  const { user, backendUserId, logout } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (!backendUserId) {
+      setError('ユーザー情報が取得できませんでした');
+      return;
+    }
+    if (!confirm('本当にアカウントを削除しますか？この操作は取り消せません。')) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await userApi.deleteUser(backendUserId);
+      await logout();
+      router.push('/');
+    } catch (e) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError('アカウント削除に失敗しました');
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [backendUserId, logout, router]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -115,11 +143,13 @@ export default function AccountSettings() {
           <h2 className="text-lg font-semibold text-gray-800 mb-4">アカウント管理</h2>
           
           <div className="space-y-4">
+            {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
             <button
-              className="text-red-600 hover:text-red-800 transition-colors"
-              disabled
+              className="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 font-semibold"
+              onClick={handleDeleteAccount}
+              disabled={deleting}
             >
-              デモモードではアカウント削除できません
+              {deleting ? '削除中...' : 'アカウントを削除する'}
             </button>
           </div>
         </div>

@@ -102,7 +102,6 @@ pipenv run dev
 
 - Google Cloud Speech APIとGemini APIを利用するには、適切な認証情報が必要です
 - `.env`ファイル内の`GOOGLE_APPLICATION_CREDENTIALS`と`GEMINI_API_KEY`を設定してください
-- 開発環境では`API_MODE=mock`に設定することで、モックデータを使用することも可能です
 
 ### フロントエンド環境構築
 

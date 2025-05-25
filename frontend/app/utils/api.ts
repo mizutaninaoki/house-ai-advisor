@@ -15,7 +15,7 @@ export async function transcribeAudio(audioBlob: Blob): Promise<{ text: string; 
     const formData = new FormData();
     formData.append('file', audioBlob, 'audio.webm');
 
-    const response = await fetch(`${API_BASE_URL}/speech/transcribe`, {
+    const response = await fetch(`${API_BASE_URL}/api/speech/transcribe`, {
       method: 'POST',
       body: formData,
     });
@@ -48,7 +48,10 @@ export async function analyzeSentiment(
   context?: string
 ): Promise<{ sentiment_score: number; is_positive: boolean; keywords: any[] }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/analysis/sentiment`, {
+    console.log('テキストの感情分析を実行:', text);
+    
+    // バックエンドの感情分析APIを呼び出す
+    const response = await fetch(`${API_BASE_URL}/api/analysis/sentiment`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -56,24 +59,75 @@ export async function analyzeSentiment(
       body: JSON.stringify({
         text,
         user_id: userId,
-        context,
+        context
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`感情分析APIエラー: ${response.status}`);
+      console.warn(`感情分析APIエラー: ${response.status} - フォールバック処理を使用します`);
+      // エラーをスローせずにフォールバック処理に進む
+      return _fallbackSentimentAnalysis(text);
     }
 
     return await response.json();
   } catch (error) {
     console.error('感情分析中にエラーが発生しました:', error);
-    // エラー時はモックデータを返す（開発用）
-    return {
-      sentiment_score: 0.15,
-      is_positive: false,
-      keywords: ['negative', 'unhappy'],
-    };
+    // エラー時はフォールバックとして簡易的な感情分析を行う
+    return _fallbackSentimentAnalysis(text);
   }
+}
+
+/**
+ * フォールバック用の簡易感情分析（APIが利用できない場合）
+ * @private
+ */
+function _fallbackSentimentAnalysis(text: string): { sentiment_score: number; is_positive: boolean; keywords: any[] } {
+  console.log('フォールバック感情分析を使用:', text);
+  
+  const positiveWords = ['良い', '嬉しい', '幸せ', '望ましい', '賛成', '満足', '同意', '希望', '好き', '感謝'];
+  const negativeWords = ['悪い', '悲しい', '不満', '不安', '問題', '心配', '反対', '困難', '嫌い', '難しい'];
+  
+  let positiveCount = 0;
+  let negativeCount = 0;
+  
+  // 単純なキーワードマッチング
+  positiveWords.forEach(word => {
+    if (text.includes(word)) positiveCount++;
+  });
+  
+  negativeWords.forEach(word => {
+    if (text.includes(word)) negativeCount++;
+  });
+  
+  // スコアの計算（0-1の範囲、0.5が中立、1が最も肯定的、0が最も否定的）
+  let score;
+  if (positiveCount === 0 && negativeCount === 0) {
+    score = 0.5; // キーワードがマッチしない場合は中立
+  } else {
+    score = 0.5 + (0.5 * (positiveCount - negativeCount) / (positiveCount + negativeCount));
+  }
+  
+  // 値域を0-1に制限
+  score = Math.max(0, Math.min(1, score));
+  
+  // キーワードリストの生成
+  const keywords = [];
+  positiveWords.forEach(word => {
+    if (text.includes(word)) keywords.push({ word, type: 'positive' });
+  });
+  
+  negativeWords.forEach(word => {
+    if (text.includes(word)) keywords.push({ word, type: 'negative' });
+  });
+  
+  const result = {
+    sentiment_score: score,
+    is_positive: score > 0.6, // 0.6以上を肯定的とみなす
+    keywords: keywords.length > 0 ? keywords : [{ word: 'neutral', type: 'neutral' }]
+  };
+  
+  console.log('フォールバック感情分析結果:', result);
+  return result;
 }
 
 /**
@@ -87,7 +141,7 @@ export async function extractIssues(
   projectId?: string
 ): Promise<{ issues: any[]; total_issues_count: number }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/analysis/issues`, {
+    const response = await fetch(`${API_BASE_URL}/api/analysis/issues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -137,7 +191,7 @@ export async function updateIssueStatus(
   updates: { issue_id: string; agreement_score: number }[]
 ): Promise<{ success: boolean; updated_issues: any[] }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/analysis/issues/status`, {
+    const response = await fetch(`${API_BASE_URL}/api/analysis/issues/status`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -175,7 +229,7 @@ export async function generateProposals(
   userPreferences?: any
 ): Promise<{ proposals: any[]; recommendation: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/proposals/generate`, {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/ai/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -239,7 +293,7 @@ export async function compareProposals(
   criteria?: string[]
 ): Promise<{ comparison: any[]; criteria: string[]; recommendation: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/proposals/compare`, {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/compare`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -325,14 +379,23 @@ export const userApi = {
   // Firebase UIDでユーザーを検索
   getUserByFirebaseUid: async (firebaseUid: string) => {
     const response = await fetch(`${API_BASE_URL}/api/users/firebase/${firebaseUid}`);
-    
     if (!response.ok) {
       if (response.status === 404) {
         return null; // ユーザーが見つからない場合はnullを返す
       }
       throw new Error(`ユーザー検索に失敗しました: ${response.statusText}`);
     }
-    
+    return await response.json();
+  },
+  
+  // ユーザー削除
+  deleteUser: async (userId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`ユーザー削除に失敗しました: ${response.statusText}`);
+    }
     return await response.json();
   },
   
@@ -413,7 +476,7 @@ export const projectApi = {
   },
   
   // プロジェクトの作成
-  createProject: async (projectData: { title: string, description: string, user_id: number }) => {
+  createProject: async (projectData: { title: string, description: string, user_id: number, members?: { email: string, name: string, relation?: string }[] }) => {
     const response = await fetch(`${API_BASE_URL}/api/projects/`, {
       method: 'POST',
       headers: {
@@ -458,6 +521,13 @@ export const projectApi = {
     
     return await response.json();
   },
+  
+  // プロジェクト参加メンバー一覧を取得
+  getProjectMembers: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/members`);
+    if (!response.ok) throw new Error('メンバー一覧取得に失敗');
+    return await response.json();
+  },
 };
 
 // 提案関連のAPI
@@ -494,7 +564,6 @@ export const proposalApi = {
     project_id: number, 
     title: string, 
     content: string,
-    image_url?: string,
     is_favorite?: boolean
   }) => {
     const response = await fetch(`${API_BASE_URL}/api/proposals/`, {
@@ -538,6 +607,539 @@ export const proposalApi = {
       throw new Error(`提案削除に失敗しました: ${response.statusText}`);
     }
     
+    return await response.json();
+  },
+  
+  // 提案の更新
+  updateProposal: async (proposalId: number, proposalData: { title: string, content: string, support_rate?: number }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proposalData),
+    });
+    if (!response.ok) {
+      throw new Error(`提案の更新に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+};
+
+// 会話関連のAPI
+export const conversationApi = {
+  // 会話データの取得
+  getConversation: async (projectId: number) => {
+    try {
+      // バックエンドから会話データを取得する
+      // 注: バックエンド側でまだ実装されていなければモックデータではなく空配列を返す
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/conversations`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data; // 実際のデータを返す
+      } else if (response.status === 404) {
+        console.log('会話データが見つかりません。空の配列を返します。');
+        return []; // 404の場合は空配列を返す
+      } else {
+        throw new Error(`会話データの取得に失敗しました: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.warn('会話データの取得中にエラーが発生しました:', error);
+      // エラー時は空の配列を返す（モックデータなし）
+      return [];
+    }
+  },
+  
+  // 会話メッセージの保存
+  saveMessage: async (messageData: { 
+    project_id: number, 
+    content: string, 
+    speaker: string,
+    sentiment?: 'positive' | 'neutral' | 'negative'
+  }) => {
+    try {
+      // メッセージの感情分析（sentimentが指定されていない場合）
+      if (!messageData.sentiment) {
+        try {
+          const sentimentResult = await analyzeSentiment(messageData.content);
+          // 感情分析の結果によってsentimentを設定
+          if (sentimentResult.is_positive) {
+            messageData.sentiment = 'positive';
+          } else if (sentimentResult.sentiment_score < 0.4) {
+            messageData.sentiment = 'negative';
+          } else {
+            messageData.sentiment = 'neutral';
+          }
+        } catch (err) {
+          console.warn('感情分析に失敗しました。デフォルト値を使用します:', err);
+          messageData.sentiment = 'neutral';
+        }
+      }
+
+      // Conversationモデルに存在するフィールドのみを含むオブジェクトを作成
+      const validConversationData = {
+        project_id: messageData.project_id,
+        content: messageData.content,
+        speaker: messageData.speaker,
+        sentiment: messageData.sentiment
+      };
+
+      // バックエンドにメッセージを保存
+      const response = await fetch(`${API_BASE_URL}/api/projects/${messageData.project_id}/conversations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(validConversationData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`メッセージの保存に失敗しました: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.warn('メッセージの保存中にエラーが発生しました:', error);
+      // エラー時はローカルオブジェクトを返す（DBには保存されていない）
+      return {
+        id: Math.floor(Math.random() * 1000) + 10,
+        content: messageData.content,
+        speaker: messageData.speaker,
+        timestamp: new Date().toISOString(),
+        sentiment: messageData.sentiment || 'neutral'
+      };
+    }
+  },
+  
+  // 音声をアップロードして文字起こし
+  transcribeAndSave: async (projectId: number, audioBlob: Blob, speaker: string) => {
+    try {
+      // 音声文字起こしAPIを呼び出す
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'recording.webm');
+      
+      // バックエンドの/speech/transcribeエンドポイントを使用
+      const response = await fetch(`${API_BASE_URL}/api/speech/transcribe`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`音声の処理に失敗しました: ${response.statusText}`);
+      }
+      
+      const transcriptionResult = await response.json();
+      console.log('文字起こし結果:', transcriptionResult);
+      
+      // 文字起こし結果があれば、メッセージとして保存
+      if (transcriptionResult.text) {
+        // 感情分析を実行
+        let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+        try {
+          const sentimentResult = await analyzeSentiment(transcriptionResult.text);
+          // スコアに基づいて感情を分類
+          if (sentimentResult.is_positive) {
+            sentiment = 'positive';
+          } else if (sentimentResult.sentiment_score < 0.4) {
+            sentiment = 'negative';
+          } else {
+            sentiment = 'neutral';
+          }
+        } catch (error) {
+          console.warn('感情分析に失敗しました:', error);
+          // エラー時はデフォルトの感情を使用
+          sentiment = 'neutral';
+        }
+        
+        // Conversationモデルに存在するフィールドのみを含むオブジェクトを作成
+        const messageData = {
+          project_id: projectId,
+          content: transcriptionResult.text,
+          speaker: speaker,
+          sentiment: sentiment
+        };
+        
+        // 保存APIを呼び出す
+        const savedMessage = await conversationApi.saveMessage(messageData);
+        
+        return {
+          text: transcriptionResult.text,
+          confidence: transcriptionResult.confidence || 0.5,
+          message: savedMessage,
+          sentiment: sentiment
+        };
+      } else {
+        throw new Error('文字起こし結果が空です');
+      }
+    } catch (error) {
+      console.warn('音声処理中にエラーが発生しました:', error);
+      // エラー時は正しく保存されていないことを示すため、ローカルオブジェクトを返す
+      const mockText = '音声の処理中にエラーが発生しました。保存されていないのでリロードすると消えます。';
+      const mockMessage = {
+        id: Math.floor(Math.random() * 1000) + 10,
+        content: mockText,
+        speaker: speaker,
+        timestamp: new Date().toISOString(),
+        sentiment: 'neutral' as 'positive' | 'neutral' | 'negative'
+      };
+      
+      return {
+        text: mockText,
+        confidence: 0,
+        message: mockMessage,
+        sentiment: 'neutral' as 'positive' | 'neutral' | 'negative'
+      };
+    }
+  },
+  
+  // 会話から論点を抽出
+  extractIssues: async (projectId: number) => {
+    try {
+      // 会話履歴を取得
+      const messages = await conversationApi.getConversation(projectId);
+      
+      // バックエンドの論点抽出APIがある場合はそれを使用
+      // 現状ではこの形式のエンドポイントはまだないのでモックデータを返す
+      
+      // 相続コンテキストに基づく論点を抽出
+      const defaultIssues = [
+        {
+          id: 1,
+          content: '実家に住み続けたいという希望',
+          type: 'positive' as const,
+          agreement_level: 'high' as const,
+          related_messages: [1, 3]
+        },
+        {
+          id: 2,
+          content: '相続の公平性に関する懸念',
+          type: 'negative' as const,
+          agreement_level: 'medium' as const,
+          related_messages: [2]
+        },
+        {
+          id: 3,
+          content: '父の思い出の部屋を残したいという要望',
+          type: 'requirement' as const,
+          agreement_level: 'medium' as const,
+          related_messages: [3]
+        },
+        {
+          id: 4,
+          content: '固定資産税の支払い負担',
+          type: 'neutral' as const,
+          agreement_level: 'low' as const,
+          related_messages: [2, 3]
+        }
+      ];
+      
+      // 会話内容に基づいて論点をカスタマイズ
+      const customizedIssues = [...defaultIssues];
+      
+      // 会話内容から特定のキーワードを検出して論点を追加
+      const conversationText = messages.map((m: { content: string }) => m.content).join(' ');
+      
+      if (conversationText.includes('売却') || conversationText.includes('売る')) {
+        customizedIssues.push({
+          id: 5,
+          content: '実家を売却することへの意向',
+          type: conversationText.includes('売りたくない') ? 'negative' as const : 'positive' as const,
+          agreement_level: 'medium' as const,
+          related_messages: []
+        });
+      }
+      
+      if (conversationText.includes('預金') || conversationText.includes('貯金') || conversationText.includes('現金')) {
+        customizedIssues.push({
+          id: 6,
+          content: '預貯金の分配方法',
+          type: 'neutral' as const,
+          agreement_level: 'high' as const,
+          related_messages: []
+        });
+      }
+      
+      if (conversationText.includes('公平') || conversationText.includes('平等')) {
+        customizedIssues.push({
+          id: 7,
+          content: '遺産分割の公平性確保',
+          type: 'requirement' as const,
+          agreement_level: 'high' as const,
+          related_messages: []
+        });
+      }
+      
+      return {
+        issues: customizedIssues
+      };
+    } catch (error) {
+      console.warn('論点抽出中にエラーが発生しました。モックデータを返します:', error);
+      // モックデータを返す
+      return {
+        issues: [
+          {
+            id: 1,
+            content: '実家に住み続けたいという希望',
+            type: 'positive' as const,
+            agreement_level: 'high' as const,
+            related_messages: [1, 3]
+          },
+          {
+            id: 2,
+            content: '相続の公平性に関する懸念',
+            type: 'negative' as const,
+            agreement_level: 'medium' as const,
+            related_messages: [2]
+          },
+          {
+            id: 3,
+            content: '父の思い出の部屋を残したいという要望',
+            type: 'requirement' as const,
+            agreement_level: 'medium' as const,
+            related_messages: [3]
+          },
+          {
+            id: 4,
+            content: '固定資産税の支払い負担',
+            type: 'neutral' as const,
+            agreement_level: 'low' as const,
+            related_messages: [2, 3]
+          }
+        ]
+      };
+    }
+  }
+};
+
+// 論点関連のAPI
+export const issueApi = {
+  // プロジェクトの論点一覧を取得
+  getIssues: async (projectId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/issues?project_id=${projectId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data; // 実際のデータを返す
+      } else if (response.status === 404) {
+        console.log('論点データが見つかりません。空の配列を返します。');
+        return []; // 404の場合は空配列を返す
+      } else {
+        throw new Error(`論点データの取得に失敗しました: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.warn('論点データの取得中にエラーが発生しました:', error);
+      // エラー時は空の配列を返す
+      return [];
+    }
+  },
+  
+  // 会話から論点を抽出して保存
+  extractAndSaveIssues: async (projectId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/issues/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      
+      if (!response.ok) {
+        console.error(`論点抽出エラー: ${response.status} ${response.statusText}`);
+        throw new Error(`論点抽出に失敗しました: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.warn('論点抽出中にエラーが発生しました:', error);
+      throw error; // エラーを上位に伝播
+    }
+  },
+  
+  // 論点を追加
+  createIssue: async (issueData: {
+    project_id: number;
+    content: string;
+    type: 'positive' | 'negative' | 'neutral' | 'requirement';
+    agreement_level?: 'high' | 'medium' | 'low';
+  }) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/issues`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(issueData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`論点の作成に失敗しました: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.warn('論点作成中にエラーが発生しました:', error);
+      throw error;
+    }
+  },
+  
+  // 論点を更新
+  updateIssue: async (
+    issueId: number,
+    issueData: {
+      content: string;
+      type: 'positive' | 'negative' | 'neutral' | 'requirement';
+      agreement_level?: 'high' | 'medium' | 'low';
+    }
+  ) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/issues/${issueId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(issueData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`論点の更新に失敗しました: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.warn('論点更新中にエラーが発生しました:', error);
+      throw error;
+    }
+  },
+  
+  // 論点を削除
+  deleteIssue: async (issueId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/issues/${issueId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`論点の削除に失敗しました: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.warn('論点削除中にエラーが発生しました:', error);
+      throw error;
+    }
+  }
+};
+
+// 提案ポイント（ProposalPoint）関連のAPI
+export const proposalPointsApi = {
+  // 指定提案のポイント一覧取得
+  getPoints: async (proposalId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}/points`);
+    if (!response.ok) {
+      throw new Error(`ポイント一覧の取得に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント追加
+  createPoint: async (proposalId: number, pointData: { proposal_id: number; type: string; content: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}/points`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pointData),
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント作成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント更新
+  updatePoint: async (pointId: number, pointData: { type?: string; content?: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/points/${pointId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pointData),
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント更新に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // ポイント削除
+  deletePoint: async (pointId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/points/${pointId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`ポイント削除に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+};
+
+// 協議書（Agreement）関連のAPI
+export const agreementApi = {
+  // AIで協議書を生成し保存
+  generateAgreementAI: async (projectId: number, proposalId: number) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agreements/ai/generate?project_id=${projectId}&proposal_id=${proposalId}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // body: JSON.stringify({ project_id: projectId, proposal_id: proposalId }), // クエリパラメータで送信するのでbody不要
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`協議書AI生成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // プロジェクトの協議書を取得
+  getAgreementByProject: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/agreements/by_project?project_id=${projectId}`);
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error(`協議書取得に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // 協議書を更新
+  updateAgreement: async (agreementId: number, data: { content?: string; status?: string; is_signed?: boolean }) => {
+    const response = await fetch(`${API_BASE_URL}/api/agreements/${agreementId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`協議書更新に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+};
+
+// 署名（Signature）関連のAPI
+export const signatureApi = {
+  // 署名を作成
+  createSignature: async (data: { agreement_id: number; user_id: number; method: string; value: string }) => {
+    const response = await fetch(`${API_BASE_URL}/api/signatures/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`署名作成に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  // 協議書ごとの署名リスト取得
+  getSignaturesByAgreement: async (agreementId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/signatures/by_agreement?agreement_id=${agreementId}`);
+    if (!response.ok) {
+      throw new Error(`署名リスト取得に失敗しました: ${response.statusText}`);
+    }
     return await response.json();
   },
 }; 

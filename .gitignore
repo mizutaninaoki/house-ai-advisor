@@ -276,3 +276,5 @@ yarn-error.log*
 
 dcp-service-account-house-ai-advisor.json
 gcp-service-account-house-ai-advisor.json
+
+.cursor/rules/**

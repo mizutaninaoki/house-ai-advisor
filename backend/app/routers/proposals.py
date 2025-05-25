@@ -16,24 +16,21 @@ router = APIRouter()
 
 # 環境変数からGemini APIキーを取得
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-API_MODE = os.getenv("API_MODE", "mock").lower()
-USE_MOCK = API_MODE == "mock"
-
 # 使用するGeminiモデル名
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
 
 # Gemini APIの初期化
 lock = Lock()
 try:
-    if not USE_MOCK and GEMINI_API_KEY:
+    if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
         print(f"Gemini APIの初期化に成功しました (モデル: {GEMINI_MODEL})")
     else:
-        print("モックモードで動作します")
+        print("Gemini APIキーが設定されていません")
+        raise RuntimeError("Gemini APIキーが設定されていません")
 except Exception as e:
     print(f"Gemini APIの初期化に失敗しました: {str(e)}")
-    USE_MOCK = True
-    print("モックモードに切り替えました")
+    raise
 
 # ===== AI提案生成機能 (旧proposal.py) =====
 
@@ -48,7 +45,7 @@ class ComparisonRequest(BaseModel):
     criteria: Optional[List[str]] = None
 
 @router.post("/ai/generate", summary="論点に基づいた提案生成", tags=["AI Proposals"])
-async def generate_proposals(request: ProposalRequest):
+async def generate_proposals(request: ProposalRequest, db: Session = Depends(get_db)):
     """
     抽出された論点に基づいて遺産分割の提案を生成します。
     
@@ -59,29 +56,16 @@ async def generate_proposals(request: ProposalRequest):
     - **recommendation**: 最も推奨される提案ID
     """
     try:
-        if USE_MOCK or not GEMINI_API_KEY:
-            print("モックモードで提案生成を実行します")
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content=_mock_proposal_generation()
-            )
-        
         print(f"Gemini API ({GEMINI_MODEL}) を使用して提案生成を実行します")
-        
-        # リクエストデータの整形
         project_id = request.project_id
         issues = request.issues
         estate_data = request.estate_data or {}
         user_preferences = request.user_preferences or {}
-        
-        # 論点情報をフォーマット
         issues_text = "\n".join([
             f"論点{i+1}: {issue.get('title', 'タイトルなし')} - {issue.get('description', '説明なし')} "
             f"(合意度: {issue.get('agreement_score', 0)}%)"
             for i, issue in enumerate(issues)
         ])
-        
-        # 不動産データをフォーマット
         estate_text = "不動産データ: "
         if estate_data:
             estate_items = []
@@ -90,8 +74,6 @@ async def generate_proposals(request: ProposalRequest):
             estate_text += ", ".join(estate_items)
         else:
             estate_text += "詳細なデータなし"
-        
-        # ユーザー選好をフォーマット
         preferences_text = "ユーザー選好: "
         if user_preferences:
             pref_items = []
@@ -100,10 +82,8 @@ async def generate_proposals(request: ProposalRequest):
             preferences_text += ", ".join(pref_items)
         else:
             preferences_text += "詳細な選好なし"
-        
-        # Gemini APIを使用した提案生成
         prompt = f"""
-あなたは遺産相続の専門家AIアシスタントです。以下の論点と情報に基づいて、最適な遺産分割の提案を複数生成し、JSONフォーマットで結果を返してください。
+あなたは遺産相続の専門家AIアシスタントです。以下の論点と情報に基づいて、最適な遺産分割の提案を**絶対に1〜3件だけ**生成し、JSONフォーマットで結果を返してください。
 
 プロジェクトID: {project_id}
 
@@ -114,7 +94,7 @@ async def generate_proposals(request: ProposalRequest):
 
 {preferences_text}
 
-以下の情報を含む遺産分割の提案を2〜3件生成してください：
+以下の情報を含む遺産分割の提案を**必ず1〜3件だけ**生成してください。**3件を超えてはいけません。4件以上は絶対に生成しないでください。**
 1. id: 一意の識別子（例："proposal_1"）
 2. title: 提案の短いタイトル
 3. description: 提案の詳細説明
@@ -123,7 +103,9 @@ async def generate_proposals(request: ProposalRequest):
 
 また、最も推奨される提案のIDも特定してください。
 
-レスポンスは必ず以下のJSON形式で返してください：
+**必ずsupport_rate（賛同率）が高い順に並べて返してください。**
+
+レスポンスは必ず以下のJSON形式で返してください（**3件まで。4件以上は絶対にNG**）：
 {{
   "proposals": [
     {{
@@ -137,8 +119,8 @@ async def generate_proposals(request: ProposalRequest):
         {{ "type": "effort", "content": "必要な手続き" }}
       ],
       "support_rate": 支持率（0〜100の整数）
-    }},
-    // 他の提案...
+    }}
+    // 追加する場合も最大2件まで。**絶対に3件を超えないこと！**
   ],
   "recommendation": "最も推奨される提案のID"
 }}
@@ -146,31 +128,41 @@ async def generate_proposals(request: ProposalRequest):
 遺産相続において公平性と各人の事情を考慮した提案をしてください。特に合意度が低い論点に対して有効な解決策を提示するよう心がけてください。
 説明などは不要です。JSONのみを返してください。
 """
-        
         with lock:
-            # Geminiモデルを使用
             model = genai.GenerativeModel(GEMINI_MODEL)
             response = model.generate_content(prompt)
-            
-            # レスポンステキストからJSONを抽出
             result_text = response.text.strip()
-            
-            # JSON文字列を解析
             try:
-                # コードブロック内のJSONを抽出する可能性がある場合
                 if "```json" in result_text:
-                    json_str = result_text.split("```json")[1].split("```")[0].strip()
+                    json_str = result_text.split("```json")[1].split("```", 1)[0].strip()
                     result = json.loads(json_str)
                 elif "```" in result_text:
-                    json_str = result_text.split("```")[1].split("```")[0].strip()
+                    json_str = result_text.split("```", 1)[1].split("```", 1)[0].strip()
                     result = json.loads(json_str)
                 else:
                     result = json.loads(result_text)
-                
-                # 結果の検証
                 if "proposals" not in result or "recommendation" not in result:
                     raise ValueError("APIレスポンスに必要なフィールドがありません")
-                
+                # support_rate降順でソートし、最大3件に制限
+                result["proposals"] = sorted(result["proposals"], key=lambda p: p.get("support_rate", 0), reverse=True)[:3]
+                # 生成された提案をDBに保存
+                saved_proposals = []
+                for p in result["proposals"]:
+                    db_proposal = crud.create_proposal(db, schemas.ProposalCreate(
+                        project_id=int(project_id),
+                        title=p["title"],
+                        content=p["description"],
+                        is_favorite=False,
+                        support_rate=p.get("support_rate", 0.0)
+                    ))
+                    # ポイントも保存
+                    for point in p.get("points", []):
+                        crud.create_proposal_point(db, schemas.ProposalPointCreate(
+                            proposal_id=db_proposal.id,
+                            type=point["type"],
+                            content=point["content"]
+                        ))
+                    saved_proposals.append(db_proposal)
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
                     content=result
@@ -178,7 +170,6 @@ async def generate_proposals(request: ProposalRequest):
             except json.JSONDecodeError as e:
                 print(f"JSONパースエラー: {e}, テキスト: {result_text}")
                 raise ValueError(f"APIレスポンスをJSONにパースできませんでした: {result_text}")
-        
     except Exception as e:
         print(f"提案生成中にエラーが発生しました: {str(e)}")
         raise HTTPException(
@@ -198,22 +189,9 @@ async def compare_proposals(request: ComparisonRequest):
     - **recommendation**: 比較結果に基づく推奨案
     """
     try:
-        if USE_MOCK or not GEMINI_API_KEY:
-            print("モックモードで提案比較を実行します")
-            criteria = request.criteria or ["公平性", "手続きの容易さ", "現金化", "不動産維持"]
-            proposals = request.proposals
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content=_mock_proposal_comparison(proposals, criteria)
-            )
-        
         print(f"Gemini API ({GEMINI_MODEL}) を使用して提案比較を実行します")
-        
-        # リクエストデータの整形
         proposals = request.proposals
         criteria = request.criteria or ["公平性", "手続きの容易さ", "現金化", "不動産維持"]
-        
-        # 提案情報をフォーマット
         proposals_text = "\n\n".join([
             f"提案ID: {prop.get('id', 'unknown')}\n"
             f"タイトル: {prop.get('title', '')}\n"
@@ -221,8 +199,6 @@ async def compare_proposals(request: ComparisonRequest):
             f"ポイント: {', '.join([point.get('content', '') for point in prop.get('points', [])])}"
             for prop in proposals
         ])
-        
-        # Gemini APIを使用した提案比較
         prompt = f"""
 あなたは遺産相続の専門家AIアシスタントです。以下の複数の遺産分割提案を比較分析し、JSONフォーマットで結果を返してください。
 
@@ -242,8 +218,8 @@ async def compare_proposals(request: ComparisonRequest):
       "proposal_id": "提案のID",
       "title": "提案のタイトル",
       "scores": {{
-        "比較基準1": スコア（1〜5の整数）,
-        "比較基準2": スコア（1〜5の整数）,
+        "比較基準1": スコア（1〜5の整数）, 
+        "比較基準2": スコア（1〜5の整数）, 
         ...
       }},
       "total_score": 総合スコア（すべての基準のスコアの合計）
@@ -256,31 +232,21 @@ async def compare_proposals(request: ComparisonRequest):
 
 説明などは不要です。JSONのみを返してください。
 """
-        
         with lock:
-            # Geminiモデルを使用
             model = genai.GenerativeModel(GEMINI_MODEL)
             response = model.generate_content(prompt)
-            
-            # レスポンステキストからJSONを抽出
             result_text = response.text.strip()
-            
-            # JSON文字列を解析
             try:
-                # コードブロック内のJSONを抽出する可能性がある場合
                 if "```json" in result_text:
-                    json_str = result_text.split("```json")[1].split("```")[0].strip()
+                    json_str = result_text.split("```json")[1].split("```", 1)[0].strip()
                     result = json.loads(json_str)
                 elif "```" in result_text:
-                    json_str = result_text.split("```")[1].split("```")[0].strip()
+                    json_str = result_text.split("```", 1)[1].split("```", 1)[0].strip()
                     result = json.loads(json_str)
                 else:
                     result = json.loads(result_text)
-                
-                # 結果の検証
                 if "comparison" not in result or "recommendation" not in result:
                     raise ValueError("APIレスポンスに必要なフィールドがありません")
-                
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
                     content=result
@@ -288,99 +254,12 @@ async def compare_proposals(request: ComparisonRequest):
             except json.JSONDecodeError as e:
                 print(f"JSONパースエラー: {e}, テキスト: {result_text}")
                 raise ValueError(f"APIレスポンスをJSONにパースできませんでした: {result_text}")
-        
     except Exception as e:
         print(f"提案比較中にエラーが発生しました: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"提案比較中にエラーが発生しました: {str(e)}"
         )
-
-def _mock_proposal_generation() -> Dict[str, Any]:
-    """モックの提案生成データを返す（デバッグ・テスト用）"""
-    proposals = [
-        {
-            "id": "proposal_1",
-            "title": "不動産の現金化による平等分配",
-            "description": "不動産を売却して現金化し、相続人で平等に分配する案",
-            "points": [
-                {"type": "merit", "content": "平等な分配が可能"},
-                {"type": "merit", "content": "将来的な管理問題が発生しない"},
-                {"type": "demerit", "content": "思い入れのある不動産を手放す必要がある"},
-                {"type": "cost", "content": "不動産売却の仲介手数料が発生する"},
-                {"type": "effort", "content": "不動産売却の手続きが必要"}
-            ],
-            "support_rate": 75
-        },
-        {
-            "id": "proposal_2",
-            "title": "不動産の共同所有と収益分配",
-            "description": "不動産を共同所有とし、賃貸収益を相続人で分配する案",
-            "points": [
-                {"type": "merit", "content": "不動産を手放さなくて済む"},
-                {"type": "merit", "content": "継続的な収入源となる"},
-                {"type": "demerit", "content": "管理の手間と責任が発生する"},
-                {"type": "demerit", "content": "将来的に相続人間で意見の相違が生じる可能性がある"},
-                {"type": "cost", "content": "定期的なメンテナンス費用が必要"},
-                {"type": "effort", "content": "共有名義の登記と賃貸管理の体制構築が必要"}
-            ],
-            "support_rate": 60
-        },
-        {
-            "id": "proposal_3",
-            "title": "一部現金化と一部共同所有の折衷案",
-            "description": "不動産の一部を売却して現金化し、残りを共同所有とする折衷案",
-            "points": [
-                {"type": "merit", "content": "一部は即時分配が可能"},
-                {"type": "merit", "content": "不動産の一部は保持できる"},
-                {"type": "demerit", "content": "部分売却が難しい場合がある"},
-                {"type": "cost", "content": "複雑な評価と分割手続きが必要"},
-                {"type": "effort", "content": "部分売却と共有持分の設定などの複雑な手続きが必要"}
-            ],
-            "support_rate": 85
-        }
-    ]
-    
-    # ランダムに推奨提案を選択
-    recommendation = random.choice([p["id"] for p in proposals])
-    
-    return {
-        "proposals": proposals,
-        "recommendation": recommendation
-    }
-
-def _mock_proposal_comparison(proposals: List[Dict[str, Any]], criteria: List[str]) -> Dict[str, Any]:
-    """モックの提案比較データを返す（デバッグ・テスト用）"""
-    comparison = []
-    
-    for prop in proposals:
-        prop_comparison = {
-            "proposal_id": prop.get("id", "unknown"),
-            "title": prop.get("title", "Unknown Proposal"),
-            "scores": {}
-        }
-        
-        total_score = 0
-        for criterion in criteria:
-            # 1から5のランダムなスコアを生成
-            score = random.randint(1, 5)
-            prop_comparison["scores"][criterion] = score
-            total_score += score
-        
-        prop_comparison["total_score"] = total_score
-        comparison.append(prop_comparison)
-    
-    # 最高スコアの提案を推奨として選択
-    if comparison:
-        recommendation = max(comparison, key=lambda x: x["total_score"])["proposal_id"]
-    else:
-        recommendation = None
-    
-    return {
-        "comparison": comparison,
-        "criteria": criteria,
-        "recommendation": recommendation
-    }
 
 # ===== データベース提案管理機能 (旧proposals_db.py) =====
 
@@ -428,4 +307,33 @@ def delete_proposal(proposal_id: int, db: Session = Depends(get_db)):
     success = crud.delete_proposal(db, proposal_id=proposal_id)
     if not success:
         raise HTTPException(status_code=404, detail="提案が見つかりません")
+    return success
+
+# ===== 提案ポイント（ProposalPoint）API =====
+@router.get("/{proposal_id}/points", response_model=List[schemas.ProposalPoint], tags=["DB ProposalPoints"])
+def get_proposal_points(proposal_id: int, db: Session = Depends(get_db)):
+    """指定した提案のポイント一覧を取得"""
+    return crud.get_proposal_points(db, proposal_id=proposal_id)
+
+@router.post("/{proposal_id}/points", response_model=schemas.ProposalPoint, tags=["DB ProposalPoints"])
+def create_proposal_point(proposal_id: int, point: schemas.ProposalPointCreate, db: Session = Depends(get_db)):
+    """提案にポイントを追加"""
+    if point.proposal_id != proposal_id:
+        raise HTTPException(status_code=400, detail="proposal_idが一致しません")
+    return crud.create_proposal_point(db, point=point)
+
+@router.put("/points/{point_id}", response_model=schemas.ProposalPoint, tags=["DB ProposalPoints"])
+def update_proposal_point(point_id: int, point_data: dict, db: Session = Depends(get_db)):
+    """ポイントを更新"""
+    db_point = crud.update_proposal_point(db, point_id=point_id, point_data=point_data)
+    if db_point is None:
+        raise HTTPException(status_code=404, detail="ポイントが見つかりません")
+    return db_point
+
+@router.delete("/points/{point_id}", response_model=bool, tags=["DB ProposalPoints"])
+def delete_proposal_point(point_id: int, db: Session = Depends(get_db)):
+    """ポイントを削除"""
+    success = crud.delete_proposal_point(db, point_id=point_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="ポイントが見つかりません")
     return success 
