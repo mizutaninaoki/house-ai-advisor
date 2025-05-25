@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/app/components/Header';
@@ -118,6 +118,7 @@ export default function ProjectDetail() {
   const [members, setMembers] = useState<{ user_id: number; user_name: string; role: string }[]>([]);
   
   const { backendUserId } = useAuth();
+  const hasInitializedConversation = useRef(false); // 追加
 
   useEffect(() => {
     // プロジェクトデータ取得
@@ -149,16 +150,20 @@ export default function ProjectDetail() {
           try {
             const conversationData = await conversationApi.getConversation(projectId);
             setMessages(conversationData);
-            if (conversationData.length === 0) {
+            if (conversationData.length === 0 && !hasInitializedConversation.current) {
+              hasInitializedConversation.current = true;
               setTimeout(() => {
                 displayInitialAiMessage(projectData);
               }, 1000);
             }
           } catch (convErr) {
             console.error('会話データ取得エラー:', convErr);
-            setTimeout(() => {
-              displayInitialAiMessage(projectData);
-            }, 1000);
+            if (!hasInitializedConversation.current) {
+              hasInitializedConversation.current = true;
+              setTimeout(() => {
+                displayInitialAiMessage(projectData);
+              }, 1000);
+            }
           }
           // 論点データの取得
           try {
