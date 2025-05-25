@@ -45,7 +45,7 @@ class ComparisonRequest(BaseModel):
     criteria: Optional[List[str]] = None
 
 @router.post("/ai/generate", summary="論点に基づいた提案生成", tags=["AI Proposals"])
-async def generate_proposals(request: ProposalRequest):
+async def generate_proposals(request: ProposalRequest, db: Session = Depends(get_db)):
     """
     抽出された論点に基づいて遺産分割の提案を生成します。
     
@@ -83,7 +83,7 @@ async def generate_proposals(request: ProposalRequest):
         else:
             preferences_text += "詳細な選好なし"
         prompt = f"""
-あなたは遺産相続の専門家AIアシスタントです。以下の論点と情報に基づいて、最適な遺産分割の提案を複数生成し、JSONフォーマットで結果を返してください。
+あなたは遺産相続の専門家AIアシスタントです。以下の論点と情報に基づいて、最適な遺産分割の提案を**絶対に1〜3件だけ**生成し、JSONフォーマットで結果を返してください。
 
 プロジェクトID: {project_id}
 
@@ -94,7 +94,7 @@ async def generate_proposals(request: ProposalRequest):
 
 {preferences_text}
 
-以下の情報を含む遺産分割の提案を2〜3件生成してください：
+以下の情報を含む遺産分割の提案を**必ず1〜3件だけ**生成してください。**3件を超えてはいけません。4件以上は絶対に生成しないでください。**
 1. id: 一意の識別子（例："proposal_1"）
 2. title: 提案の短いタイトル
 3. description: 提案の詳細説明
@@ -103,7 +103,9 @@ async def generate_proposals(request: ProposalRequest):
 
 また、最も推奨される提案のIDも特定してください。
 
-レスポンスは必ず以下のJSON形式で返してください：
+**必ずsupport_rate（賛同率）が高い順に並べて返してください。**
+
+レスポンスは必ず以下のJSON形式で返してください（**3件まで。4件以上は絶対にNG**）：
 {{
   "proposals": [
     {{
@@ -117,8 +119,8 @@ async def generate_proposals(request: ProposalRequest):
         {{ "type": "effort", "content": "必要な手続き" }}
       ],
       "support_rate": 支持率（0〜100の整数）
-    }},
-    // 他の提案...
+    }}
+    // 追加する場合も最大2件まで。**絶対に3件を超えないこと！**
   ],
   "recommendation": "最も推奨される提案のID"
 }}
@@ -141,6 +143,26 @@ async def generate_proposals(request: ProposalRequest):
                     result = json.loads(result_text)
                 if "proposals" not in result or "recommendation" not in result:
                     raise ValueError("APIレスポンスに必要なフィールドがありません")
+                # support_rate降順でソートし、最大3件に制限
+                result["proposals"] = sorted(result["proposals"], key=lambda p: p.get("support_rate", 0), reverse=True)[:3]
+                # 生成された提案をDBに保存
+                saved_proposals = []
+                for p in result["proposals"]:
+                    db_proposal = crud.create_proposal(db, schemas.ProposalCreate(
+                        project_id=int(project_id),
+                        title=p["title"],
+                        content=p["description"],
+                        is_favorite=False,
+                        support_rate=p.get("support_rate", 0.0)
+                    ))
+                    # ポイントも保存
+                    for point in p.get("points", []):
+                        crud.create_proposal_point(db, schemas.ProposalPointCreate(
+                            proposal_id=db_proposal.id,
+                            type=point["type"],
+                            content=point["content"]
+                        ))
+                    saved_proposals.append(db_proposal)
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
                     content=result

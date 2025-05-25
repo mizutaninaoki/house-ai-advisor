@@ -106,6 +106,7 @@ class ProposalBase(BaseSchema):
     title: str
     content: str
     is_favorite: bool = False
+    support_rate: float = 0.0
 
 class ProposalCreate(ProposalBase):
     pass

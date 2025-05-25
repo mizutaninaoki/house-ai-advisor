@@ -229,7 +229,7 @@ export async function generateProposals(
   userPreferences?: any
 ): Promise<{ proposals: any[]; recommendation: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/proposals/generate`, {
+    const response = await fetch(`${API_BASE_URL}/api/proposals/ai/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -595,7 +595,7 @@ export const proposalApi = {
   },
   
   // 提案の更新
-  updateProposal: async (proposalId: number, proposalData: { title: string, content: string }) => {
+  updateProposal: async (proposalId: number, proposalData: { title: string, content: string, support_rate?: number }) => {
     const response = await fetch(`${API_BASE_URL}/api/proposals/${proposalId}`, {
       method: 'PUT',
       headers: {

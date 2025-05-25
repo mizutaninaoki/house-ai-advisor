@@ -12,7 +12,7 @@ import {
   proposalApi,
   conversationApi,
   issueApi,
-  proposalPointsApi
+  generateProposals
 } from '@/app/utils/api';
 
 interface Project {
@@ -99,19 +99,20 @@ export default function ProjectDetail() {
         // プロジェクトに関連する提案の取得
         const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId);
         // APIレスポンスを適切なProposal型に変換
-        const formattedProposals = proposalsData.map(proposal => ({
+        const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
           id: proposal.id.toString(),
           title: proposal.title || '無題の提案',
           description: proposal.content || '',
           supportRate: proposal.support_rate || 0,
-          points: (proposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+          points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
             id: pt.id ?? idx,
-            type: pt.type,
+            type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
             content: pt.content
           })),
           selected: proposal.is_selected || false,
           is_favorite: Boolean(proposal.is_favorite),
-        }));
+        }))
+        .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
         setProposals(formattedProposals);
         
         // 会話履歴の取得
@@ -263,15 +264,18 @@ export default function ProjectDetail() {
         title: newProposal.title || '無題の提案',
         description: newProposal.content || '',
         supportRate: newProposal.support_rate || 0,
-        points: (newProposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+        points: (newProposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
           id: pt.id ?? idx,
-          type: pt.type,
+          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
           content: pt.content
         })),
         is_favorite: Boolean(newProposal.is_favorite),
       };
       
-      setProposals([...proposals, formattedProposal]);
+      setProposals([
+        formattedProposal,
+        ...proposals
+      ]);
     } catch (err) {
       console.error('提案作成エラー:', err);
       setError('新しい提案の作成に失敗しました');
@@ -1198,11 +1202,23 @@ export default function ProjectDetail() {
           <button
             onClick={handleGenerateAiProposals}
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center"
+            disabled={isAiProcessing}
           >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 01-8 0M12 3v4m0 0a4 4 0 01-4 4H4m8-4a4 4 0 004 4h4"></path>
-            </svg>
-            AIで提案を作成
+            {isAiProcessing ? (
+              <>
+                <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white mr-2"></span>
+                生成中...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  {/* シンプルなプラスマークアイコン */}
+                  <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                AIで提案を作成
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1224,6 +1240,13 @@ export default function ProjectDetail() {
         </div>
       ) : (
         <div>
+          {/* ローディング中案内 */}
+          {isAiProcessing && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-green-500 mb-3"></div>
+              <p className="text-gray-600">AIが提案を生成中です。しばらくお待ちください…</p>
+            </div>
+          )}
           {/* 提案フィルター/ソートオプション */}
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-6 flex items-center">
             <div className="mr-4">
@@ -1237,9 +1260,8 @@ export default function ProjectDetail() {
               <span className="text-indigo-600 font-medium">お気に入り: {proposals.filter(p => p.is_favorite).length}件</span>
             </div>
           </div>
-                
           {/* 提案カードグリッド */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {proposals.map((proposal) => (
               <ProposalCard
                 key={proposal.id}
@@ -1261,49 +1283,27 @@ export default function ProjectDetail() {
     try {
       // 論点・会話履歴を取得
       const issuesData = await issueApi.getIssues(projectId);
-      // const issues = issuesData.map((issue: any) => ({
-      //   title: issue.topic || '',
-      //   description: issue.content,
-      //   agreement_score: issue.agreement_level === 'high' ? 80 : issue.agreement_level === 'medium' ? 50 : 20
-      // }));
-      // AI生成API呼び出し
-      const aiResult = await proposalApi.getProposals(projectId);
-      // 返却された提案をDBに保存
-      for (const aiProposal of aiResult.proposals) {
-        const newProposal = await proposalApi.createProposal({
-          project_id: projectId,
-          title: aiProposal.title,
-          content: aiProposal.description
-        });
-        // ポイントも保存
-        if (aiProposal.points && Array.isArray(aiProposal.points)) {
-          for (const point of aiProposal.points) {
-            await proposalPointsApi.createPoint(newProposal.id, {
-              proposal_id: newProposal.id,
-              type: point.type,
-              content: point.content
-            });
-          }
-        }
-      }
-      // 再取得してリスト更新
+      // AI生成API呼び出し（この時点でDB保存済み）
+      await generateProposals(projectId.toString(), issuesData);
+      // ここでDB保存APIは呼ばず、リストを再取得するだけ
       const proposalsData = await proposalApi.getProposals(projectId);
-      const formattedProposals = proposalsData.map((proposal: any) => ({
+      const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
         id: proposal.id.toString(),
         title: proposal.title || '無題の提案',
         description: proposal.content || '',
         supportRate: proposal.support_rate || 0,
-        points: (proposal.points || []).map((pt: any, idx: number): ProposalPoint => ({
+        points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
           id: pt.id ?? idx,
-          type: pt.type,
+          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
           content: pt.content
         })),
         selected: proposal.is_selected || false,
         is_favorite: Boolean(proposal.is_favorite),
-      }));
+      }))
+      .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
       setProposals(formattedProposals);
       setError(null);
-    } catch (err) {
+    } catch {
       setError('AIによる提案生成に失敗しました');
     } finally {
       setIsAiProcessing(false);
@@ -1314,23 +1314,25 @@ export default function ProjectDetail() {
   const handleProposalUpdate = async (proposal: Proposal) => {
     await proposalApi.updateProposal(Number(proposal.id), {
       title: proposal.title,
-      content: proposal.description
+      content: proposal.description,
+      support_rate: proposal.supportRate
     });
     // 再取得してリスト更新
     const proposalsData = await proposalApi.getProposals(projectId);
-    const formattedProposals = proposalsData.map((p: any) => ({
+    const formattedProposals = (proposalsData as ApiProposal[]).map((p: ApiProposal) => ({
       id: p.id.toString(),
       title: p.title || '無題の提案',
       description: p.content || '',
       supportRate: p.support_rate || 0,
-      points: (p.points || []).map((pt: any, idx: number): ProposalPoint => ({
+      points: (p.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
         id: pt.id ?? idx,
-        type: pt.type,
+        type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
         content: pt.content
       })),
       selected: p.is_selected || false,
       is_favorite: Boolean(p.is_favorite),
-    }));
+    }))
+    .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
     setProposals(formattedProposals);
   };
 

@@ -41,13 +41,15 @@ export default function ProposalCard({
   const [editTitle, setEditTitle] = useState(title);
   const [editDescription, setEditDescription] = useState(description);
   const [editPoints, setEditPoints] = useState<Array<{ type: ProposalPoint['type']; content: string }>>([]);
+  const [editSupportRate, setEditSupportRate] = useState(supportRate);
 
   useEffect(() => {
     proposalPointsApi.getPoints(Number(id)).then((data) => {
       setPoints(data);
       setEditPoints(data.map((p: ProposalPoint) => ({ type: p.type, content: p.content })));
     });
-  }, [id, editMode]);
+    setEditSupportRate(supportRate);
+  }, [id, editMode, supportRate]);
 
   const getBorderColor = () => {
     if (selected) return 'border-green-500';
@@ -106,7 +108,7 @@ export default function ProposalCard({
   );
 
   const handleSave = async () => {
-    if (onUpdate) await onUpdate({ ...proposal, title: editTitle, description: editDescription });
+    if (onUpdate) await onUpdate({ ...proposal, title: editTitle, description: editDescription, supportRate: editSupportRate });
     for (const ep of editPoints) {
       if (ep.content && !points.find(p => p.type === ep.type && p.content === ep.content)) {
         await proposalPointsApi.createPoint(Number(id), {
@@ -152,40 +154,80 @@ export default function ProposalCard({
         </div>
       </div>
       {editMode ? (
-        <textarea
-          className="w-full border border-indigo-200 rounded p-2 mb-4 text-gray-700 focus:outline-none focus:border-indigo-500"
-          value={editDescription}
-          onChange={e => setEditDescription(e.target.value)}
-          rows={3}
-          title="提案内容を編集"
-          placeholder="提案内容を入力"
-        />
+        <>
+          <textarea
+            className="w-full border border-indigo-200 rounded p-2 mb-4 text-gray-700 focus:outline-none focus:border-indigo-500"
+            value={editDescription}
+            onChange={e => setEditDescription(e.target.value)}
+            rows={3}
+            title="提案内容を編集"
+            placeholder="提案内容を入力"
+          />
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">賛同率</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={editSupportRate}
+                onChange={e => setEditSupportRate(Number(e.target.value))}
+                className="flex-1"
+                title="賛同率をスライダーで調整"
+                placeholder="賛同率"
+              />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={editSupportRate}
+                onChange={e => setEditSupportRate(Number(e.target.value))}
+                className="w-16 border rounded px-2 py-1 text-sm"
+                title="賛同率を数値で入力"
+                placeholder="賛同率"
+              />
+              <span className="text-gray-700 text-sm font-semibold">{editSupportRate}%</span>
+            </div>
+          </div>
+          {renderEditPoints()}
+        </>
       ) : (
-        <p className="text-gray-600 mb-4">{description}</p>
-      )}
-      
-      {editMode ? renderEditPoints() : (
-        <ul className="mb-2 space-y-1">
-          {points.map((p, idx) => (
-            <li key={idx} className="flex items-center gap-2 text-sm leading-relaxed">
-              {/* アイコン */}
-              {p.type === 'merit' && <span className="text-green-500 text-base">●</span>}
-              {p.type === 'demerit' && <span className="text-red-500 text-base">●</span>}
-              {p.type === 'cost' && <span className="text-blue-500 text-base">¥</span>}
-              {p.type === 'effort' && <span className="text-gray-500 text-base">⏱</span>}
-              {/* ラベル */}
-              <span className="font-semibold">
-                {p.type === 'merit' && 'メリット'}
-                {p.type === 'demerit' && 'デメリット'}
-                {p.type === 'cost' && 'コスト'}
-                {p.type === 'effort' && '労力・手間'}
-              </span>
-              <span>：</span>
-              {/* 内容 */}
-              <span>{p.content}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="text-gray-600 mb-4">{description}</p>
+          {points && points.length > 0 && (
+            <ul className="mb-4 space-y-2">
+              {points.map((point, idx) => (
+                <li key={idx} className="flex items-center gap-2 text-sm">
+                  {point.type === 'merit' && (
+                    <span className="flex items-center text-green-600 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-green-500 mr-2 inline-block"></span>
+                      メリット
+                    </span>
+                  )}
+                  {point.type === 'demerit' && (
+                    <span className="flex items-center text-red-600 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-red-500 mr-2 inline-block"></span>
+                      デメリット
+                    </span>
+                  )}
+                  {point.type === 'cost' && (
+                    <span className="flex items-center text-yellow-600 font-medium">
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zm0 0V4m0 8v8" /></svg>
+                      コスト
+                    </span>
+                  )}
+                  {point.type === 'effort' && (
+                    <span className="flex items-center text-blue-600 font-medium">
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2a4 4 0 018 0v2M9 17H7a2 2 0 01-2-2v-5a2 2 0 012-2h2m0 0V7a4 4 0 118 0v1m-8 2h8" /></svg>
+                      労力・手間
+                    </span>
+                  )}
+                  <span className="text-gray-700">{point.content}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
       
       <div className="flex justify-between mt-4 pt-3 border-t border-gray-100 mt-auto">
@@ -200,6 +242,7 @@ export default function ProposalCard({
               onClick={() => {
                 setEditTitle(title);
                 setEditDescription(description);
+                setEditSupportRate(supportRate);
                 setEditMode(false);
               }}
             >キャンセル</button>
