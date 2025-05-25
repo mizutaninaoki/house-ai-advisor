@@ -115,7 +115,7 @@ export default function ProjectDetail() {
   const [agreementLoading, setAgreementLoading] = useState(false);
   // プレビュー表示用の状態
   const [showAgreementPreview, setShowAgreementPreview] = useState(false);
-  const [members, setMembers] = useState<{ user_id: number; user_name: string; role: string }[]>([]);
+  const [members, setMembers] = useState<{ user_id: number; user_name: string; name?: string; role: string }[]>([]);
   
   const { backendUserId } = useAuth();
   const hasInitializedConversation = useRef(false); // 追加
@@ -248,11 +248,12 @@ export default function ProjectDetail() {
     // プロジェクト参加メンバー一覧の取得
     const fetchMembers = async () => {
       try {
-        const membersData: Array<{ user_id: number; user_name?: string; role: string }> = await projectApi.getProjectMembers(projectId);
+        const membersData: Array<{ user_id: number; user_name?: string; name?: string; role: string }> = await projectApi.getProjectMembers(projectId);
         console.log('membersData', membersData);
         setMembers(membersData.map((m) => ({
           user_id: m.user_id,
           user_name: m.user_name || `ユーザー${m.user_id}`,
+          name: m.name,
           role: m.role
         })));
       } catch {
@@ -1032,7 +1033,7 @@ export default function ProjectDetail() {
                           <span
                             className="absolute left-1/2 -translate-x-1/2 -top-1 font-serif font-bold text-lg text-gray-700 tracking-wider select-none leading-none p-0 m-0"
                             style={{letterSpacing: '0.15em', lineHeight: 1, padding: 0, margin: 0}}>
-                            {member.user_name}
+                            {member.name || member.user_name}
                           </span>
                         )}
                         <span className="w-full border-b border-gray-300 h-6 block"></span>

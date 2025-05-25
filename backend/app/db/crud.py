@@ -287,7 +287,7 @@ def get_project_members(db: Session, project_id: int):
     return db.query(models.ProjectMember).filter(models.ProjectMember.project_id == project_id).all()
 
 def create_project_member(db: Session, member: schemas.ProjectMemberCreate):
-    # relationも含めて保存される
+    # relation, name も含めて保存される
     db_member = models.ProjectMember(**member.dict())
     db.add(db_member)
     db.commit()

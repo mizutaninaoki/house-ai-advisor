@@ -227,6 +227,7 @@ class ProjectMemberBase(BaseSchema):
     user_id: int
     role: str = "member"
     relation: Optional[str] = None  # 続柄
+    name: Optional[str] = None  # 氏名
 
 class ProjectMemberCreate(ProjectMemberBase):
     pass

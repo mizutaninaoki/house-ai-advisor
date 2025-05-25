@@ -176,3 +176,4 @@ class ProjectMember(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     role = Column(String, default="member")  # 役割: owner/member など
     relation = Column(String)  # 続柄
+    name = Column(String, nullable=True)  # 氏名
