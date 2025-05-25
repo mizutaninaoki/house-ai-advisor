@@ -93,7 +93,12 @@ export default function NewProject() {
       const projectData = {
         title: projectName,
         description: projectDescription,
-        user_id: backendUserId
+        user_id: backendUserId,
+        members: heirs.map(h => ({
+          email: h.email,
+          name: h.name,
+          relation: h.relation
+        }))
       };
       console.log('プロジェクト作成リクエストデータ:', projectData);
       
@@ -188,6 +193,7 @@ export default function NewProject() {
               <div className={`flex-1 h-2 ${step >= 3 ? 'bg-cyan-500' : 'bg-gray-200'}`}></div>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 3 ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-600'}`}>3</div>
               <div className={`flex-1 h-2 ${step >= 4 ? 'bg-cyan-500' : 'bg-gray-200'}`}></div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 4 ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-600'}`}>4</div>
             </div>
             <div className="flex justify-between mt-2 text-sm text-gray-600">
               <div className={step >= 1 ? 'text-cyan-600 font-medium' : ''}>基本情報</div>

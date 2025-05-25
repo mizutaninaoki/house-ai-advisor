@@ -17,6 +17,10 @@ class UserBase(BaseSchema):
 class UserCreate(UserBase):
     pass
 
+# 追加: relation を持つ UserCreate
+class UserWithRelationCreate(UserBase):
+    relation: Optional[str] = None
+
 class User(UserBase):
     id: int
     created_at: datetime
@@ -32,6 +36,7 @@ class ProjectBase(BaseSchema):
 
 class ProjectCreate(ProjectBase):
     user_id: int
+    members: List[UserWithRelationCreate] | None = None
 
 class Project(ProjectBase):
     id: int
@@ -46,6 +51,7 @@ class ProjectDetail(Project):
     conversations: List["Conversation"] = []
     proposals: List["Proposal"] = []
     issues: List["Issue"] = []
+    members: List["ProjectMember"] = []
 
 # 会話スキーマ
 class ConversationBase(BaseSchema):
@@ -210,6 +216,21 @@ class Signature(SignatureBase):
     id: int
     created_at: datetime
 
+    class Config:
+        from_attributes = True
+
+# プロジェクトメンバースキーマ
+class ProjectMemberBase(BaseSchema):
+    project_id: int
+    user_id: int
+    role: str = "member"
+    relation: Optional[str] = None  # 続柄
+
+class ProjectMemberCreate(ProjectMemberBase):
+    pass
+
+class ProjectMember(ProjectMemberBase):
+    id: int
     class Config:
         from_attributes = True
 

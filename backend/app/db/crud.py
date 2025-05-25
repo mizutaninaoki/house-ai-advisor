@@ -33,7 +33,9 @@ def get_projects(db: Session, user_id: Optional[int] = None, skip: int = 0, limi
     return query.offset(skip).limit(limit).all()
 
 def create_project(db: Session, project: schemas.ProjectCreate):
-    db_project = models.Project(**project.dict())
+    # membersを除外してdict化
+    project_data = project.dict(exclude={"members"})
+    db_project = models.Project(**project_data)
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
@@ -274,4 +276,16 @@ def create_signature(db: Session, signature: schemas.SignatureCreate):
     return db_signature
 
 def get_signatures_by_agreement(db: Session, agreement_id: int):
-    return db.query(models.Signature).filter(models.Signature.agreement_id == agreement_id).all() 
+    return db.query(models.Signature).filter(models.Signature.agreement_id == agreement_id).all()
+
+# プロジェクトメンバー関連CRUD
+def get_project_members(db: Session, project_id: int):
+    return db.query(models.ProjectMember).filter(models.ProjectMember.project_id == project_id).all()
+
+def create_project_member(db: Session, member: schemas.ProjectMemberCreate):
+    # relationも含めて保存される
+    db_member = models.ProjectMember(**member.dict())
+    db.add(db_member)
+    db.commit()
+    db.refresh(db_member)
+    return db_member 

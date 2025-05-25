@@ -166,3 +166,12 @@ class Signature(Base):
     # リレーションシップ
     agreement = relationship("Agreement")
     user = relationship("User")
+
+# プロジェクトメンバー中間テーブル
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    role = Column(String, default="member")  # 役割: owner/member など
+    relation = Column(String)  # 続柄

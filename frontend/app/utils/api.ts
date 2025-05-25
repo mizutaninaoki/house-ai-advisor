@@ -467,7 +467,7 @@ export const projectApi = {
   },
   
   // プロジェクトの作成
-  createProject: async (projectData: { title: string, description: string, user_id: number }) => {
+  createProject: async (projectData: { title: string, description: string, user_id: number, members?: { email: string, name: string, relation?: string }[] }) => {
     const response = await fetch(`${API_BASE_URL}/api/projects/`, {
       method: 'POST',
       headers: {
@@ -510,6 +510,13 @@ export const projectApi = {
       throw new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
     }
     
+    return await response.json();
+  },
+  
+  // プロジェクト参加メンバー一覧を取得
+  getProjectMembers: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/members`);
+    if (!response.ok) throw new Error('メンバー一覧取得に失敗');
     return await response.json();
   },
 };

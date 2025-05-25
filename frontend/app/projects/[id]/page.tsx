@@ -98,7 +98,6 @@ export default function ProjectDetail() {
   const [transcription, setTranscription] = useState(''); // 文字起こしテキスト
   const [issues, setIssues] = useState<Issue[]>([]); // 抽出された論点
   const [signatures, setSignatures] = useState<Signature[]>([]); // 署名情報
-  const [signingPin, setSigningPin] = useState(''); // 署名PIN
   const [isAiProcessing, setIsAiProcessing] = useState(false); // AI処理中フラグ
   const [isExtractingIssues, setIsExtractingIssues] = useState(false); // 論点生成中フラグ
   // 協議書作成用に選択された提案
@@ -110,6 +109,7 @@ export default function ProjectDetail() {
   const [agreementLoading, setAgreementLoading] = useState(false);
   // プレビュー表示用の状態
   const [showAgreementPreview, setShowAgreementPreview] = useState(false);
+  const [members, setMembers] = useState<{ user_id: number; user_name: string; role: string }[]>([]);
   
   useEffect(() => {
     // プロジェクトデータ取得
@@ -230,6 +230,21 @@ export default function ProjectDetail() {
         }
       })();
     }
+
+    // プロジェクト参加メンバー一覧の取得
+    const fetchMembers = async () => {
+      try {
+        const membersData: Array<{ user_id: number; user_name?: string; role: string }> = await projectApi.getProjectMembers(projectId);
+        setMembers(membersData.map((m) => ({
+          user_id: m.user_id,
+          user_name: m.user_name || `ユーザー${m.user_id}`,
+          role: m.role
+        })));
+      } catch {
+        setMembers([]);
+      }
+    };
+    if (projectId) fetchMembers();
   }, [projectId, loading, project, activeTab, selectedAgreementProposal]);
 
   // プロジェクト情報を基に初期AIメッセージを表示
@@ -484,95 +499,60 @@ export default function ProjectDetail() {
     }
   };
 
-  // 署名処理
-  const handleSign = async () => {
-    if (!signingPin || signingPin.length < 4) {
-      setError('署名PINは4桁以上で入力してください');
-      return;
-    }
-    if (!agreement) {
-      setError('協議書が存在しません');
-      return;
-    }
-    try {
-      setLoading(true);
-      // 仮のuser_id: 1、method: 'pin'、value: signingPin
-      await signatureApi.createSignature({
-        agreement_id: agreement.id,
-        user_id: 1, // TODO: 実際のログインユーザーIDに置き換え
-        method: 'pin',
-        value: signingPin,
-      });
-      // 署名リストを再取得
-      const updatedSignatures = await signatureApi.getSignaturesByAgreement(agreement.id);
-      setSignatures(updatedSignatures);
-      setSigningPin('');
-      setError(null);
-    } catch (err) {
-      console.error('署名エラー:', err);
-      setError('署名処理に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // タブ切り替え用コンポーネント
   const TabButton = ({ tab, label }: { tab: TabType; label: string }) => {
-    // タブごとにアイコンを定義
     const getIcon = () => {
       switch (tab) {
         case 'conversation':
           return (
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
-            </svg>
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
           );
         case 'discussion':
           return (
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
-            </svg>
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
           );
         case 'proposal':
           return (
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           );
         case 'signature':
           return (
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-            </svg>
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           );
         default:
           return null;
       }
     };
-    
+    const isActive = activeTab === tab;
     return (
       <button
         onClick={() => setActiveTab(tab)}
-        className={`px-4 py-3 text-center flex-1 flex items-center justify-center transition-all duration-200 ${
-          activeTab === tab
-            ? 'bg-white border-t-2 border-indigo-600 text-indigo-600 font-medium shadow-sm rounded-t-md'
-            : 'text-gray-600 hover:text-indigo-500 hover:bg-gray-100'
-        }`}
+        className={`flex-1 flex flex-col items-center justify-center py-2 transition-all duration-200 font-semibold relative
+          ${isActive ? 'text-indigo-700 bg-white shadow z-10' : 'text-gray-500 hover:bg-gray-50 cursor-pointer'}
+        `}
+        style={{ minWidth: 0 }}
+        aria-current={isActive ? 'page' : undefined}
       >
         {getIcon()}
-        <span>{label}</span>
-        
-        {/* 未読バッジの表示 */}
+        <span className="text-sm font-bold tracking-wide">{label}</span>
+        {/* バッジ */}
         {tab === 'discussion' && issues.length > 0 && (
-          <span className="ml-2 bg-indigo-100 text-indigo-800 text-xs font-semibold px-2 py-0.5 rounded-full">
+          <span className={`absolute top-2 right-4 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all duration-200
+            ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}
+          >
             {issues.length}
           </span>
         )}
         {tab === 'proposal' && proposals.length > 0 && (
-          <span className="ml-2 bg-indigo-100 text-indigo-800 text-xs font-semibold px-2 py-0.5 rounded-full">
+          <span className={`absolute top-2 right-4 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all duration-200
+            ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}
+          >
             {proposals.length}
           </span>
         )}
+        {/* アクティブインジケーター */}
+        <span className={`absolute left-0 right-0 top-0 h-1 rounded-t-xl transition-all duration-300
+          ${isActive ? 'bg-indigo-600' : 'bg-transparent'}`}></span>
       </button>
     );
   };
@@ -980,178 +960,91 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* --- 協議書用紙風カード --- */}
-      <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
-        <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">遺産分割協議書</h2>
-        <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
-        <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent || '協議書がありません'}</div>
-        <div className="border-t border-gray-300 pt-6 mt-6">
-          <div className="flex flex-col gap-4">
-            {['テストユーザー', '山田花子', '田中太郎'].map(name => {
-              const sig = signatures.find(s => s.user_name === name && s.status === 'signed');
-              return (
-                <div key={name} className="flex items-center gap-4 relative min-h-[40px]">
-                  <span className="w-32 text-right text-gray-700">{name}</span>
-                  <span className="flex-1 border-b border-gray-400 h-6 relative"></span>
-                  {sig ? (
-                    <span
-                      className="absolute left-40 -top-2 text-red-600 font-bold text-lg rounded-full border-2 border-red-400 px-4 py-1 bg-white rotate-[-12deg] shadow-md select-none"
-                      style={{ zIndex: 2 }}
-                    >
-                      承認
-                    </span>
-                  ) : (
-                    <span className="ml-2 text-gray-400 text-xs">署名待ち</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {/* 協議書編集・プレビュー */}
-        <div className="flex gap-2 mt-8 justify-end">
-          {/* 編集ボタンは「自分が署名済みでない場合のみ」表示 */}
-          {!isEditingAgreement && agreement && !signatures.find(s => s.user_name === 'テストユーザー' && s.status === 'signed') && (
-            <button className="px-3 py-1 bg-indigo-500 text-white rounded" onClick={() => setIsEditingAgreement(true)} disabled={agreementLoading}>編集</button>
-          )}
-          <button
-            className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-            onClick={() => setShowAgreementPreview(true)}
-            disabled={!agreement}
-          >
-            協議書プレビュー
-          </button>
-        </div>
-        {/* 協議書プレビュー（モーダル） */}
-        {showAgreementPreview && agreement && (
-          <AgreementPreview
-            projectName={project?.title || ''}
-            projectDescription={project?.description || ''}
-            members={[]}
-            proposals={[{
-              id: agreement.proposal_id?.toString() || '',
-              title: proposals.find(p => p.id === agreement.proposal_id?.toString())?.title || '',
-              description: proposals.find(p => p.id === agreement.proposal_id?.toString())?.description || '',
-              supportRate: proposals.find(p => p.id === agreement.proposal_id?.toString())?.supportRate || 0
-            }]}
-            createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
-            signatures={signatures.map(s => ({
-              id: s.id.toString(),
-              name: s.user_name,
-              isComplete: s.status === 'signed',
-              date: s.signed_at ? new Date(s.signed_at) : undefined
-            }))}
-            onClose={() => setShowAgreementPreview(false)}
-          />
-        )}
-        {/* 編集モード */}
-        {isEditingAgreement && (
-          <div className="mt-6">
-            <textarea
-              className="w-full border rounded p-2 mb-2"
-              rows={8}
-              value={agreementContent}
-              onChange={e => setAgreementContent(e.target.value)}
-              placeholder="協議書の内容を入力してください"
-              title="協議書内容"
-            />
-            <div className="flex gap-2">
-              <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={handleSaveAgreement} disabled={agreementLoading}>保存</button>
-              <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setAgreementContent(agreement?.content || ''); }}>キャンセル</button>
+      {/* --- 協議書用紙風カード or 案内メッセージ --- */}
+      {agreement && agreementContent ? (
+        <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
+          <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">遺産分割協議書</h2>
+          <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
+          <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent}</div>
+          <div className="border-t border-gray-300 pt-6 mt-6">
+            <div className="flex flex-col gap-4">
+              {members.map(member => {
+                const sig = signatures.find(s => s.user_name === member.user_name && s.status === 'signed');
+                return (
+                  <div key={member.user_id} className="flex items-center gap-4 relative min-h-[40px]">
+                    <span className="w-32 text-right text-gray-700">{member.user_name}</span>
+                    <span className="flex-1 border-b border-gray-400 h-6 relative"></span>
+                    {sig ? (
+                      <span
+                        className="absolute left-40 -top-2 text-red-600 font-bold text-lg rounded-full border-2 border-red-400 px-4 py-1 bg-white rotate-[-12deg] shadow-md select-none"
+                        style={{ zIndex: 2 }}
+                      >
+                        承認
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-gray-400 text-xs">署名待ち</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
-        )}
-      </div>
-      {/* --- ここまで協議書用紙風カード --- */}
-
-      {/* 署名PIN入力エリア（未署名ユーザーのみ） */}
-      {!signatures.find(s => s.user_name === 'テストユーザー') && (
-        <div className="bg-white border-2 border-indigo-200 rounded-lg p-6 mb-6 shadow-sm max-w-2xl mx-auto">
-          <h3 className="font-medium text-lg mb-4 flex items-center">
-            <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-            </svg>
-            あなたの署名を入力してください
-          </h3>
-          <div className="mb-4">
-            <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
-              署名用PIN（4桁以上）
-            </label>
-            <div className="relative">
-              <input
-                type="password"
-                id="pin"
-                value={signingPin}
-                onChange={(e) => setSigningPin(e.target.value)}
-                placeholder="署名用PINを入力"
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 pl-10"
-                minLength={4}
-                autoFocus
+          <div className="flex gap-2 mt-8 justify-end">
+            {!isEditingAgreement && agreement && !signatures.find(s => s.user_name === 'テストユーザー' && s.status === 'signed') && (
+              <button className="px-3 py-1 bg-indigo-500 text-white rounded" onClick={() => setIsEditingAgreement(true)} disabled={agreementLoading}>編集</button>
+            )}
+            <button
+              className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+              onClick={() => setShowAgreementPreview(true)}
+              disabled={!agreement}
+            >
+              協議書プレビュー
+            </button>
+          </div>
+          {showAgreementPreview && agreement && (
+            <AgreementPreview
+              projectName={project?.title || ''}
+              projectDescription={project?.description || ''}
+              members={[]}
+              proposals={[{
+                id: agreement.proposal_id?.toString() || '',
+                title: proposals.find(p => p.id === agreement.proposal_id?.toString())?.title || '',
+                description: proposals.find(p => p.id === agreement.proposal_id?.toString())?.description || '',
+                supportRate: proposals.find(p => p.id === agreement.proposal_id?.toString())?.supportRate || 0
+              }]}
+              createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
+              signatures={signatures.map(s => ({
+                id: s.id.toString(),
+                name: s.user_name,
+                isComplete: s.status === 'signed',
+                date: s.signed_at ? new Date(s.signed_at) : undefined
+              }))}
+              onClose={() => setShowAgreementPreview(false)}
+            />
+          )}
+          {isEditingAgreement && (
+            <div className="mt-6">
+              <textarea
+                className="w-full border rounded p-2 mb-2"
+                rows={8}
+                value={agreementContent}
+                onChange={e => setAgreementContent(e.target.value)}
+                placeholder="協議書の内容を入力してください"
+                title="協議書内容"
               />
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                </svg>
+              <div className="flex gap-2">
+                <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={handleSaveAgreement} disabled={agreementLoading}>保存</button>
+                <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setAgreementContent(agreement?.content || ''); }}>キャンセル</button>
               </div>
             </div>
-          </div>
-          <button
-            onClick={handleSign}
-            disabled={signingPin.length < 4 || loading}
-            className="w-full px-4 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                処理中...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-                </svg>
-                署名して同意
-              </>
-            )}
-          </button>
+          )}
+        </div>
+      ) : (
+        <div className="max-w-2xl mx-auto bg-white shadow rounded-lg border-2 border-gray-200 p-12 text-center text-gray-500 text-lg my-12">
+          協議書がまだ作成されていません。<br />
+          提案タブから協議書を作成してください。
         </div>
       )}
-
-      {/* 署名済みメッセージ */}
-      {signatures.find(s => s.user_name === 'テストユーザー') && (
-        <div className="max-w-2xl mx-auto border-green-500 border-2 rounded-lg p-6 mb-6 bg-green-50 flex flex-col items-center">
-          <div className="flex items-center mb-4">
-            <div className="bg-green-100 p-2 rounded-full mr-3">
-              <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h3 className="font-medium text-lg text-green-700">あなたは署名済みです</h3>
-          </div>
-          <p className="text-green-600 pl-11">
-            <span className="font-medium">{new Date(signatures.find(s => s.user_name === 'テストユーザー')!.signed_at).toLocaleDateString()}</span> 
-            <span className="mx-1">に署名しました。</span>
-            <span className="text-xs bg-green-100 px-2 py-1 rounded ml-2">
-              {new Date(signatures.find(s => s.user_name === 'テストユーザー')!.signed_at).toLocaleTimeString()}
-            </span>
-          </p>
-        </div>
-      )}
-
-      <div className="mt-6 border-t border-gray-200 pt-4">
-        <p className="text-sm text-gray-600 flex items-start">
-          <svg className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>
-            全員の署名が完了すると、本協議書は法的効力を持ちます。
-            署名はタイムスタンプ付きで記録され、改ざんすることはできません。
-          </span>
-        </p>
-      </div>
     </div>
   );
 
@@ -1370,7 +1263,7 @@ export default function ProjectDetail() {
           </div>
           
           {/* タブナビゲーション */}
-          <div className="mb-6 bg-gray-50 rounded-t-lg border border-gray-200 overflow-hidden">
+          <div className="mb-6 bg-white rounded-2xl shadow border border-gray-200 overflow-hidden">
             <div className="flex shadow-sm">
               <TabButton tab="conversation" label="会話" />
               <TabButton tab="discussion" label="論点" />

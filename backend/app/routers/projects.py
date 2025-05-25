@@ -17,8 +17,28 @@ class ConversationMessageCreate(BaseModel):
 
 @router.post("/", response_model=schemas.Project)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
-    """新しいプロジェクトを作成する"""
-    return crud.create_project(db=db, project=project)
+    """新しいプロジェクトを作成する（メンバーも同時登録）"""
+    # プロジェクト本体を作成
+    db_project = crud.create_project(db=db, project=project)
+    # メンバーが指定されていればUser＋ProjectMemberを作成
+    if project.members:
+        for member in project.members:
+            db_user = crud.get_user_by_email(db, member.email)
+            if not db_user:
+                # relationを除外してUserCreateを作成
+                user_data = schemas.UserCreate(
+                    email=member.email,
+                    name=member.name,
+                    firebase_uid=getattr(member, "firebase_uid", None)
+                )
+                db_user = crud.create_user(db, user_data)
+            crud.create_project_member(db, schemas.ProjectMemberCreate(
+                project_id=db_project.id,
+                user_id=db_user.id,
+                role="member",
+                relation=member.relation
+            ))
+    return db_project
 
 @router.get("/", response_model=List[schemas.Project])
 def read_projects(user_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -108,4 +128,9 @@ def create_project_conversation(
         "speaker": message.speaker,
         "timestamp": conversation.created_at.isoformat(),
         "sentiment": message.sentiment
-    } 
+    }
+
+@router.get("/{project_id}/members", response_model=List[schemas.ProjectMember])
+def get_project_members(project_id: int, db: Session = Depends(get_db)):
+    """プロジェクト参加メンバー一覧を取得"""
+    return crud.get_project_members(db, project_id) 
