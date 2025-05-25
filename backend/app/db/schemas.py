@@ -15,7 +15,7 @@ class UserBase(BaseSchema):
     firebase_uid: Optional[str] = None
 
 class UserCreate(UserBase):
-    pass
+    hashed_password: Optional[str] = None
 
 # 追加: relation を持つ UserCreate
 class UserWithRelationCreate(UserBase):
