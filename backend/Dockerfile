@@ -2,14 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# pipenvのインストール
-RUN pip install --no-cache-dir pipenv
-
-# Pipfile.lockとPipfileをコピー
-COPY Pipfile Pipfile.lock ./
-
-# pipenv経由で依存関係をインストール（システムにインストールして仮想環境を使わない）
-RUN pipenv install --system --deploy --ignore-pipfile
+# 必要なパッケージをインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

@@ -25,16 +25,16 @@ export default function Home() {
   const router = useRouter();
   
   useEffect(() => {
-    setUser({ displayName: 'テストユーザー', email: 'test@example.com' } as User);
+    // テスト用ユーザーデータはコメントアウト
+    // setUser({ displayName: 'テストユーザー', email: 'test@example.com' } as User);
     
-    /*
+    // Firebase認証を使用
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
     
     return () => unsubscribe();
-    */
   }, []);
   
   const handleGetStarted = () => {

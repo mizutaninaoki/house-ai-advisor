@@ -1,1134 +1,1368 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { 
-  ArrowLeftIcon,
-  ChatBubbleLeftRightIcon,
-  DocumentTextIcon,
-  ChartBarIcon,
-  PencilSquareIcon
-} from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
-import IssueMap, { Issue } from '@/app/components/IssueMap';
-import ProposalCard, { Proposal } from '@/app/components/ProposalCard';
-import PushToTalkButton from '@/app/components/PushToTalkButton';
-import MessageBubble from '@/app/components/MessageBubble';
-import SignatureInput from '@/app/components/SignatureInput';
-import AgreementPreview from '@/app/components/AgreementPreview';
+import ProposalCard, { Proposal, ProposalPoint } from '@/app/components/ProposalCard';
+import VoiceRecorder from '@/app/components/VoiceRecorder';
 import { 
-  extractIssues, 
-  generateProposals, 
-  updateIssueStatus,
-  analyzeSentiment
+  projectApi,
+  proposalApi,
+  conversationApi,
+  issueApi,
+  generateProposals,
+  agreementApi,
+  signatureApi
 } from '@/app/utils/api';
+import AgreementPreview from '@/app/components/AgreementPreview';
+import SignatureInput from '@/app/components/SignatureInput';
+import { useAuth } from '@/app/auth/AuthContext';
 
-// 会話メッセージの型定義
-interface Intention {
-  type: 'wish' | 'requirement' | 'compromise' | 'rejection';
-  content: string;
+interface Project {
+  id: number;
+  title: string;
+  description: string;
+  user_id: number;
+  created_at: string;
+  updated_at?: string;
+  status?: string;
 }
 
-interface Conversation {
-  id: string;
-  message: string;
-  isUser: boolean;
-  sentimentScore?: number;
-  intention?: Intention;
-  keyPoint?: boolean;
-  timestamp: Date;
+interface ApiProposal {
+  id: number;
+  title: string;
+  content: string;
+  support_rate: number;
+  is_selected?: boolean;
+  is_favorite?: boolean;
+  points?: Array<{
+    type: 'merit' | 'demerit' | 'cost' | 'effort';
+    content: string;
+  }>;
+}
+
+// 会話メッセージの型定義
+interface Message {
+  id: number;
+  content: string;
+  speaker: string;
+  timestamp: string;
+  sentiment?: 'positive' | 'neutral' | 'negative'; // 感情分析結果
+}
+
+// 論点の型定義
+interface Issue {
+  id: number;
+  content: string;
+  type: 'positive' | 'negative' | 'neutral' | 'requirement';
+  agreement_level?: 'high' | 'medium' | 'low';
+  related_messages?: number[]; // 関連メッセージのID
+  topic?: string; // 論点のトピック（例：「相続の分割割合」）
+  summary?: string; // 論点の要約
+  status?: 'agreed' | 'disagreed' | 'discussing'; // 合意状態
+  priority?: 'high' | 'medium' | 'low'; // 優先度
+  classification?: 'agreed' | 'disagreed' | 'discussing'; // 分類
+}
+
+// 署名情報の型定義
+interface Signature {
+  id: number;
+  user_id?: number; // 追加
+  user_name: string;
+  signed_at: string;
+  status: 'pending' | 'signed';
+  method?: 'pin' | 'text';
+  value?: string;
+}
+
+// タブの型定義
+type TabType = 'conversation' | 'discussion' | 'proposal' | 'signature';
+
+interface Agreement {
+  id: number;
+  project_id: number;
+  proposal_id?: number;
+  title?: string; // 追加
+  content: string;
+  status: string;
+  is_signed: boolean;
+  created_at: string;
+  updated_at?: string;
 }
 
 export default function ProjectDetail() {
   const params = useParams();
-  const projectId = params.id as string;
+  const projectId = params.id ? parseInt(params.id as string) : 0;
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'conversations' | 'issues' | 'proposals' | 'signatures'>('conversations');
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [project, setProject] = useState<Project | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('conversation'); // デフォルトは会話タブ
+  const [messages, setMessages] = useState<Message[]>([]); // 会話メッセージ
+  const [transcription, setTranscription] = useState(''); // 文字起こしテキスト
+  const [issues, setIssues] = useState<Issue[]>([]); // 抽出された論点
+  const [signatures, setSignatures] = useState<Signature[]>([]); // 署名情報
+  const [isAiProcessing, setIsAiProcessing] = useState(false); // AI処理中フラグ
+  const [isExtractingIssues, setIsExtractingIssues] = useState(false); // 論点生成中フラグ
+  // 協議書作成用に選択された提案
+  const [selectedAgreementProposal, setSelectedAgreementProposal] = useState<Proposal | null>(null);
+  // 協議書（Agreement）状態
+  const [agreement, setAgreement] = useState<Agreement | null>(null);
+  const [agreementContent, setAgreementContent] = useState('');
+  const [isEditingAgreement, setIsEditingAgreement] = useState(false);
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  // プレビュー表示用の状態
+  const [showAgreementPreview, setShowAgreementPreview] = useState(false);
+  const [members, setMembers] = useState<{ user_id: number; user_name: string; name?: string; role: string }[]>([]);
   
-  // モックデータ
-  const [project, setProject] = useState({
-    id: projectId,
-    name: `テストプロジェクト ${projectId}`,
-    description: 'これはテスト用のプロジェクトです。',
-    createdAt: new Date(),
-    status: 'active',
-    members: [
-      { id: '1', name: 'テストユーザー', role: 'owner', email: 'test@example.com' },
-      { id: '2', name: '山田花子', role: 'member', email: 'hanako@example.com' },
-      { id: '3', name: '田中太郎', role: 'member', email: 'taro@example.com' },
-    ]
-  });
-  
-  const [conversations, setConversations] = useState<Conversation[]>([
-    { 
-      id: '1', 
-      message: 'こんにちは、遺産分割の話し合いを始めましょう。', 
-      isUser: false, 
-      timestamp: new Date(Date.now() - 3600000 * 24) 
-    },
-    { 
-      id: '2', 
-      message: '父の遺産について、実家は私が住み続けたいと思っています。', 
-      isUser: true, 
-      sentimentScore: 0.65,
-      intention: { type: 'wish', content: '実家に住み続けたいという希望が表明されています' },
-      keyPoint: true,
-      timestamp: new Date(Date.now() - 3600000 * 12) 
-    },
-    { 
-      id: '3', 
-      message: '私は現金の分配を希望します。実家には執着はありません。', 
-      isUser: false, 
-      sentimentScore: 0.8,
-      intention: { type: 'compromise', content: '実家よりも現金を希望しており、柔軟性がある姿勢です' },
-      timestamp: new Date(Date.now() - 3600000 * 6) 
-    },
-    { 
-      id: '4', 
-      message: '銀行預金はどのように分けるのがよいでしょうか？ 私としては教育費がかかるので少し多めに欲しいです。', 
-      isUser: true, 
-      sentimentScore: 0.5,
-      intention: { type: 'wish', content: '教育費の必要性から預金を多めに希望' },
-      timestamp: new Date(Date.now() - 3600000) 
-    },
-    { 
-      id: '5', 
-      message: '預金は法定相続分で良いですが、父の形見の時計だけは絶対に譲れません。', 
-      isUser: false, 
-      sentimentScore: 0.3,
-      intention: { type: 'requirement', content: '父の形見の時計は譲れない条件として提示' },
-      keyPoint: true,
-      timestamp: new Date(Date.now() - 1800000) 
-    },
-    {
-      id: '6',
-      message: '実家の庭にある桜の木は残せるといいですね。子供の頃から思い出がたくさんあります。',
-      isUser: true,
-      sentimentScore: 0.7,
-      intention: { type: 'wish', content: '実家の思い出の部分を残したいという希望' },
-      timestamp: new Date(Date.now() - 900000)
-    },
-    {
-      id: '7',
-      message: '桜の木については配慮できると思います。他に大切にしたい思い出はありますか？',
-      isUser: false,
-      sentimentScore: 0.8,
-      intention: { type: 'compromise', content: '思い出の品への配慮を示す姿勢' },
-      timestamp: new Date(Date.now() - 600000)
-    },
-    {
-      id: '8',
-      message: '遺産分割では、全員が納得できる方法を探していきたいですね。',
-      isUser: true,
-      sentimentScore: 0.75,
-      intention: { type: 'compromise', content: '公平な解決策を望む前向きな姿勢' },
-      timestamp: new Date(Date.now() - 300000)
-    },
-    {
-      id: '9',
-      message: 'その通りです。みなさんの希望をバランス良く考慮して進めていきましょう。',
-      isUser: false,
-      sentimentScore: 0.85,
-      intention: { type: 'compromise', content: '全員の希望を尊重する意向' },
-      timestamp: new Date()
-    }
-  ]);
-  
-  const [issues, setIssues] = useState<Issue[]>([
-    { id: '1', title: '実家の扱い', description: '売却か継続保有か', agreementScore: 40 },
-    { id: '2', title: '預金の分割方法', description: '均等か必要性に応じてか', agreementScore: 75 },
-    { id: '3', title: '相続税の負担', description: '誰がどのように負担するか', agreementScore: 20 },
-    { id: '4', title: '遺品の分配', description: '思い出の品の分け方', agreementScore: 60 }
-  ]);
-  
-  const [proposals, setProposals] = useState<Proposal[]>([
-    {
-      id: '1',
-      title: '実家は長男が相続し、他の相続人には現金で代償',
-      description: '実家を売却せずに長男が住み続け、その代わりに他の相続人には預貯金から多めに分配する案',
-      points: [
-        { type: 'merit', content: '実家を維持できる' },
-        { type: 'merit', content: '現金を必要とする相続人にはすぐに資金が入る' },
-        { type: 'demerit', content: '不動産評価額の算定が難しい' },
-        { type: 'cost', content: '代償金の用意が必要' }
-      ],
-      supportRate: 65
-    },
-    {
-      id: '2',
-      title: '実家を売却して全ての資産を現金化後に分割',
-      description: '不動産を売却して現金化し、法定相続分に応じて分割する案',
-      points: [
-        { type: 'merit', content: '分かりやすく公平' },
-        { type: 'merit', content: '全員が現金を受け取れる' },
-        { type: 'demerit', content: '思い出のある実家を手放す必要がある' },
-        { type: 'effort', content: '不動産売却の手続きが必要' }
-      ],
-      supportRate: 40
-    }
-  ]);
-  
-  const [signatures, setSignatures] = useState<Array<{id: string, name: string, isComplete: boolean, date?: Date}>>([
-    { id: '1', name: 'テストユーザー', isComplete: false },
-    { id: '2', name: '山田花子', isComplete: false },
-    { id: '3', name: '田中太郎', isComplete: false }
-  ]);
-  
+  const { backendUserId } = useAuth();
+  const hasInitializedConversation = useRef(false); // 追加
+  const userName = useAuth().user?.displayName || "テストユーザー";
+
   useEffect(() => {
-    // データ読み込みのシミュレーション
-    setTimeout(() => {
-      setLoading(false);
-    }, 500);
-  }, []);
-
-  // 会話から論点を抽出
-  const extractIssuesFromConversations = async () => {
-    try {
-      setIsProcessing(true);
-      setStatusMessage('会話から論点を抽出しています...');
-      
-      // 会話メッセージをAPIに適した形式に変換
-      const messages = conversations.map(conv => ({
-        id: conv.id,
-        text: conv.message,
-        is_user: conv.isUser,
-        timestamp: conv.timestamp.toISOString()
-      }));
-      
-      // APIを呼び出して論点を抽出
-      const result = await extractIssues(messages, projectId);
-      
-      if (result && result.issues && result.issues.length > 0) {
-        // 論点をIssue型に変換して状態を更新
-        const extractedIssues: Issue[] = result.issues.map(issue => ({
-          id: issue.id,
-          title: issue.title,
-          description: issue.description,
-          agreementScore: issue.agreement_score
-        }));
-        
-        setIssues(extractedIssues);
-        setStatusMessage('論点の抽出が完了しました');
-        
-        // 論点タブに自動的に切り替え
-        setActiveTab('issues');
-      } else {
-        setStatusMessage('論点が見つかりませんでした。もう少し会話を続けてください。');
-      }
-    } catch (error) {
-      console.error('論点抽出中にエラーが発生しました:', error);
-      setStatusMessage('論点抽出中にエラーが発生しました。もう一度お試しください。');
-    } finally {
-      setIsProcessing(false);
-      // 3秒後にステータスメッセージをクリア
-      setTimeout(() => setStatusMessage(null), 3000);
-    }
-  };
-  
-  // 論点から提案を生成
-  const generateProposalsFromIssues = async () => {
-    try {
-      setIsProcessing(true);
-      setStatusMessage('論点から提案を生成しています...');
-      
-      // 論点をAPIに適した形式に変換
-      const issuesForApi = issues.map(issue => ({
-        id: issue.id,
-        title: issue.title,
-        description: issue.description,
-        agreement_score: issue.agreementScore
-      }));
-      
-      // モックの不動産データ
-      const estateData = {
-        home_value: 50000000,
-        other_assets: 30000000,
-        location: '東京都世田谷区',
-        built_year: 1995
-      };
-      
-      // APIを呼び出して提案を生成
-      const result = await generateProposals(projectId, issuesForApi, estateData);
-      
-      if (result && result.proposals && result.proposals.length > 0) {
-        // 提案をProposal型に変換して状態を更新
-        const generatedProposals: Proposal[] = result.proposals.map(prop => ({
-          id: prop.id,
-          title: prop.title,
-          description: prop.description,
-          points: prop.points || [],
-          supportRate: prop.support_rate
-        }));
-        
-        setProposals(generatedProposals);
-        setStatusMessage('提案の生成が完了しました');
-        
-        // 提案タブに自動的に切り替え
-        setActiveTab('proposals');
-      } else {
-        setStatusMessage('提案を生成できませんでした。論点の内容を見直してください。');
-      }
-    } catch (error) {
-      console.error('提案生成中にエラーが発生しました:', error);
-      setStatusMessage('提案生成中にエラーが発生しました。もう一度お試しください。');
-    } finally {
-      setIsProcessing(false);
-      // 3秒後にステータスメッセージをクリア
-      setTimeout(() => setStatusMessage(null), 3000);
-    }
-  };
-  
-  // 論点の合意度更新
-  const updateIssueAgreement = async (issueId: string, newScore: number) => {
-    try {
-      setIsProcessing(true);
-      
-      // 更新データを作成
-      const updates = [{ issue_id: issueId, agreement_score: newScore }];
-      
-      // APIを呼び出して論点の合意度を更新
-      const result = await updateIssueStatus(updates);
-      
-      if (result && result.success) {
-        // 成功したら状態を更新
-        setIssues(prev => prev.map(issue => {
-          if (issue.id === issueId) {
-            return { ...issue, agreementScore: newScore };
+    // プロジェクトデータ取得
+    if (!isNaN(projectId) && projectId > 0 && loading) {
+      const fetchProjectData = async () => {
+        try {
+          setLoading(true);
+          // プロジェクト詳細の取得
+          const projectData = await projectApi.getProject(projectId);
+          setProject(projectData);
+          // プロジェクトに関連する提案の取得
+          const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId);
+          const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+            id: proposal.id.toString(),
+            title: proposal.title || '無題の提案',
+            description: proposal.content || '',
+            supportRate: proposal.support_rate || 0,
+            points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+              id: pt.id ?? idx,
+              type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+              content: pt.content
+            })),
+            selected: proposal.is_selected || false,
+            is_favorite: Boolean(proposal.is_favorite),
+          }))
+          .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+          setProposals(formattedProposals);
+          // 会話履歴の取得
+          try {
+            const conversationData = await conversationApi.getConversation(projectId);
+            setMessages(conversationData);
+            if (conversationData.length === 0 && !hasInitializedConversation.current) {
+              hasInitializedConversation.current = true;
+              setTimeout(() => {
+                displayInitialAiMessage(projectData);
+              }, 1000);
+            }
+          } catch (convErr) {
+            console.error('会話データ取得エラー:', convErr);
+            if (!hasInitializedConversation.current) {
+              hasInitializedConversation.current = true;
+              setTimeout(() => {
+                displayInitialAiMessage(projectData);
+              }, 1000);
+            }
           }
-          return issue;
-        }));
-      }
-    } catch (error) {
-      console.error('論点の合意度更新中にエラーが発生しました:', error);
-    } finally {
-      setIsProcessing(false);
+          // 論点データの取得
+          try {
+            const issuesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/issues?project_id=${projectId}`);
+            if (issuesData.ok) {
+              const issues = await issuesData.json();
+              setIssues(issues);
+            }
+          } catch (issueErr) {
+            console.error('論点データ取得エラー:', issueErr);
+          }
+          // 署名情報の取得
+          try {
+            const signaturesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/signatures?project_id=${projectId}`);
+            if (signaturesData.ok) {
+              const signatures = await signaturesData.json();
+              setSignatures(signatures);
+            }
+          } catch (signErr) {
+            console.error('署名データ取得エラー:', signErr);
+          }
+          setError(null);
+        } catch (err) {
+          console.error('データ取得エラー:', err);
+          setError('プロジェクトデータの取得に失敗しました');
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchProjectData();
+      return;
     }
-  };
 
-  // 音声文字起こし後の処理
-  const handleTranscription = async (text: string, sentimentScore?: number) => {
-    let analyzedSentiment: number;
-    let extractedIntention: Intention | undefined = undefined;
-    
-    try {
-      // バックエンドAPIを使用した感情分析
-      const sentimentResult = await analyzeSentiment(text, params.id as string, '遺産分割協議');
-      analyzedSentiment = sentimentResult.sentiment_score;
-      
-      console.log(`感情分析結果:`, sentimentResult);
-      
-      // 意図抽出（感情スコアと検出されたキーワードに基づく）
-      if (analyzedSentiment < 0.3) {
-        extractedIntention = { 
-          type: 'rejection', 
-          content: '相続財産の分配に対する強い拒否' 
-        };
-      } else if (analyzedSentiment < 0.4) {
-        extractedIntention = { 
-          type: 'requirement', 
-          content: '譲れない条件の提示' 
-        };
-      } else if (analyzedSentiment > 0.7) {
-        extractedIntention = { 
-          type: 'compromise', 
-          content: '譲歩可能な妥協案の提示' 
-        };
-      } else {
-        extractedIntention = { 
-          type: 'wish', 
-          content: '相続に関する希望の表明' 
-        };
-      }
-    } catch (error) {
-      console.error('感情分析APIエラー:', error);
-      // エラー時のフォールバックとして簡易的な意図抽出を行う
-      // エラー時は適切なデフォルト値を設定
-      analyzedSentiment = sentimentScore !== undefined ? sentimentScore : 0.5;
-      
-      if (analyzedSentiment < 0.3) {
-        extractedIntention = { 
-          type: 'rejection', 
-          content: '相続財産の分配に対する強い拒否' 
-        };
-      } else if (analyzedSentiment < 0.4) {
-        extractedIntention = { 
-          type: 'requirement', 
-          content: '譲れない条件の提示' 
-        };
-      } else if (analyzedSentiment > 0.7) {
-        extractedIntention = { 
-          type: 'compromise', 
-          content: '譲歩可能な妥協案の提示' 
-        };
-      } else {
-        extractedIntention = { 
-          type: 'wish', 
-          content: '相続に関する希望の表明' 
-        };
-      }
+    // プロジェクトデータ取得後の論点取得
+    if (project && !loading) {
+      const fetchIssues = async () => {
+        try {
+          const issuesData = await issueApi.getIssues(projectId);
+          setIssues(issuesData);
+        } catch (error) {
+          console.error('論点データ取得エラー:', error);
+        }
+      };
+      fetchIssues();
     }
-    
-    // キーポイントかどうかの判定（感情分析スコアに基づく）
-    const isKeyPoint = (extractedIntention?.type === 'rejection' && analyzedSentiment < 0.2) || 
-                       (extractedIntention?.type === 'requirement' && analyzedSentiment < 0.4);
-    
-    // 新しいユーザーメッセージを追加
-    const newMessage: Conversation = {
-      id: Date.now().toString(),
-      message: text,
-      isUser: true,
-      sentimentScore: analyzedSentiment,
-      intention: extractedIntention,
-      keyPoint: isKeyPoint,
-      timestamp: new Date()
+
+    // 署名タブ表示時の協議書取得・生成
+    if (activeTab === 'signature') {
+      setAgreementLoading(true);
+      (async () => {
+        try {
+          const data = await agreementApi.getAgreementByProject(projectId);
+          if (data) {
+            setAgreement(data);
+            setAgreementContent(data.content);
+            // 署名リストも取得
+            const sigs = await signatureApi.getSignaturesByAgreement(data.id);
+            setSignatures(sigs);
+          } else if (selectedAgreementProposal) {
+            const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(selectedAgreementProposal.id));
+            setAgreement(aiAgreement);
+            setAgreementContent(aiAgreement.content);
+            // 署名リストも取得
+            const sigs = await signatureApi.getSignaturesByAgreement(aiAgreement.id);
+            setSignatures(sigs);
+          } else {
+            setAgreement(null);
+            setAgreementContent('');
+            setSignatures([]);
+          }
+        } catch {
+          setAgreement(null);
+          setAgreementContent('');
+          setSignatures([]);
+        } finally {
+          setAgreementLoading(false);
+        }
+      })();
+    }
+
+    // プロジェクト参加メンバー一覧の取得
+    const fetchMembers = async () => {
+      try {
+        const membersData: Array<{ user_id: number; user_name?: string; name?: string; role: string }> = await projectApi.getProjectMembers(projectId);
+        console.log('membersData', membersData);
+        setMembers(membersData.map((m) => ({
+          user_id: m.user_id,
+          user_name: m.user_name || `ユーザー${m.user_id}`,
+          name: m.name,
+          role: m.role
+        })));
+      } catch {
+        setMembers([]);
+      }
+    };
+    if (projectId) fetchMembers();
+  }, [projectId, loading, project, activeTab, selectedAgreementProposal]);
+
+  // プロジェクト情報を基に初期AIメッセージを表示
+  const displayInitialAiMessage = (projectData: Project) => {
+    const initialMessage: Message = {
+      id: Date.now(),
+      content: getInitialGreeting(projectData),
+      speaker: "AI相談員",
+      timestamp: new Date().toISOString(),
+      sentiment: 'neutral'
     };
     
-    setConversations(prev => [...prev, newMessage]);
+    setMessages([initialMessage]);
     
-    // AIの応答をシミュレーション
-    setTimeout(() => {
-      // 入力テキストの感情に基づいて応答の感情を調整
-      let responseEmotionScore: number;
-      
-      // ユーザーの発言が否定的なら、AIも少し否定的に（しかし少しポジティブ方向に寄せる）
-      if (analyzedSentiment < 0.3) {
-        // ユーザーが否定的な場合、AIは少し否定的～中立的に応答
-        responseEmotionScore = Math.min(0.5, analyzedSentiment + 0.2);
-      } else if (analyzedSentiment > 0.7) {
-        // ユーザーが肯定的な場合、AIも肯定的に応答
-        responseEmotionScore = Math.min(0.9, analyzedSentiment);
-      } else {
-        // それ以外は中立的な範囲で少し変動
-        responseEmotionScore = 0.5 + (Math.random() * 0.2 - 0.1);
-      }
-      
-      // 応答タイプは感情スコアに基づいて選択
-      let responseType: 'wish' | 'requirement' | 'compromise' | 'rejection';
-      
-      if (analyzedSentiment < 0.3) {
-        // 否定的な感情には拒否
-        responseType = 'rejection';
-      } else if (analyzedSentiment < 0.4) {
-        // やや否定的な感情には要件
-        responseType = 'requirement';
-      } else if (analyzedSentiment > 0.7) {
-        // 肯定的な感情には譲歩
-        responseType = 'compromise';
-      } else {
-        // 中立的な感情には希望
-        responseType = 'wish';
-      }
-      
-      // 応答の意図内容を設定（responseTypeに基づく）
-      const responseContent = {
-        'wish': '希望が表明されています',
-        'requirement': 'これは譲れない条件として示されています',
-        'compromise': '柔軟に対応できる姿勢が示されています',
-        'rejection': '拒否・反対の意向が示されています'
-      }[responseType];
-      
-      // 応答テキストの内容をカスタマイズ（responseTypeに基づく）
-      let responseMessage: string;
-      
-      if (responseType === 'rejection') {
-        responseMessage = `「${text}」という強い意見をいただきました。他の相続人の利益も考慮して、より公平な解決策を検討する必要があります。`;
-        // 拒否タイプの応答は常に否定的な感情スコアを設定
-        responseEmotionScore = 0.2;
-      } else if (responseType === 'requirement') {
-        responseMessage = `「${text}」という条件が示されました。他の相続人の意向との調整が必要になります。`;
-        responseEmotionScore = 0.35;  // 要件タイプは少し否定的
-      } else if (responseType === 'wish') {
-        responseMessage = `「${text}」というご希望を承りました。可能な限り実現できるよう検討しましょう。`;
-        responseEmotionScore = 0.6;  // 希望タイプはやや肯定的
-      } else {
-        responseMessage = `「${text}」についてのご意見ありがとうございます。他の家族メンバーの意見も聞いて検討しましょう。`;
-        responseEmotionScore = 0.7;  // 妥協タイプは肯定的
-      }
-      
-      const aiResponse: Conversation = {
-        id: (Date.now() + 1).toString(),
-        message: responseMessage,
-        isUser: false,
-        sentimentScore: responseEmotionScore,
-        intention: { type: responseType, content: responseContent },
-        keyPoint: responseType === 'rejection' || responseType === 'requirement',
-        timestamp: new Date()
-      };
-      setConversations(prev => [...prev, aiResponse]);
-    }, 1000);
+    // メッセージをDBに保存
+    conversationApi.saveMessage({
+      project_id: projectId,
+      content: initialMessage.content,
+      speaker: initialMessage.speaker,
+      sentiment: initialMessage.sentiment
+    }).catch(err => console.error('初期メッセージの保存に失敗:', err));
   };
-  
-  // 音声BLOBの処理
-  const handleAudioRecorded = async (_audioBlob: Blob) => {
-    // audioBlob変数にアンダースコアを追加して未使用変数のリントエラーを回避
+
+  // プロジェクト情報に基づいた初期挨拶を生成
+  const getInitialGreeting = (projectData: Project): string => {
+    const projectTitle = projectData.title || '相続に関する相談';
+    
+    // プロジェクトタイトルに「相続」が含まれる場合
+    if (projectTitle.includes('相続')) {
+      return `${projectTitle}についてお聞かせください。実家の処分方法や、資産分割でお考えのことはありますか？`;
+    }
+    
+    // プロジェクトタイトルに「実家」が含まれる場合
+    if (projectTitle.includes('実家')) {
+      return `${projectTitle}についてお聞かせください。実家をどのようにしたいとお考えですか？売却をお考えですか、それとも誰かが住み続けることをお考えですか？`;
+    }
+    
+    // プロジェクトタイトルに「遺産」が含まれる場合
+    if (projectTitle.includes('遺産')) {
+      return `${projectTitle}についてお聞かせください。遺産分割でどのようなことをお考えですか？特に不動産や預貯金の分け方について気になることはありますか？`;
+    }
+    
+    // デフォルトの挨拶
+    return `${projectTitle}について、お手伝いさせていただきます。まずは現在のお考えや状況について教えていただけますか？`;
+  };
+
+  // 提案のお気に入り状態を切り替える
+  const handleToggleFavorite = async (proposalId: number) => {
     try {
-      // ここではバックエンドAPIを使って音声処理
-      // transcribeAudioとhandleTranscriptionは既に別のフローで連携しているのでコメントアウト
-      /*
-      const transcriptionResult = await transcribeAudio(audioBlob);
-      if (transcriptionResult && transcriptionResult.text) {
-        handleTranscription(transcriptionResult.text, transcriptionResult.confidence);
-      }
-      */
-    } catch (error) {
-      console.error('音声処理中にエラーが発生しました:', error);
+      const updatedProposal = await proposalApi.toggleFavorite(proposalId);
+      
+      // 提案リストを更新
+      setProposals(proposals.map(p => 
+        p.id === proposalId.toString() ? { ...p, is_favorite: Boolean(updatedProposal.is_favorite) } : p
+      ));
+    } catch (err) {
+      console.error('お気に入り更新エラー:', err);
+      setError('お気に入り状態の更新に失敗しました');
     }
   };
-  
-  const handleProposalVote = (proposalId: string, support: boolean) => {
-    // 提案への投票処理
-    setProposals(prev => prev.map(proposal => {
-      if (proposal.id === proposalId) {
-        // 簡易的なシミュレーション: 賛成なら+10%、反対なら-10%
-        const change = support ? 10 : -10;
-        const newRate = Math.min(100, Math.max(0, proposal.supportRate + change));
-        return { ...proposal, supportRate: newRate };
+
+  // 提案を削除する
+  const handleDeleteProposal = async (proposalId: number) => {
+    if (confirm('この提案を削除してもよろしいですか？')) {
+      try {
+        await proposalApi.deleteProposal(proposalId);
+        setProposals(proposals.filter(p => p.id !== proposalId.toString()));
+      } catch (err) {
+        console.error('削除エラー:', err);
+        setError('提案の削除に失敗しました');
       }
-      return proposal;
-    }));
+    }
   };
-  
-  const handleSignComplete = (method: 'pin' | 'text', value: string) => {
-    // 署名完了処理
-    console.log(`署名完了: ${method} - ${value}`);
-    
-    // ステータスメッセージの設定
-    setStatusMessage('署名が完了しました。協議書の処理を進めています...');
-    
-    // 署名状態の更新
-    setSignatures(prev => prev.map((sig, index) => {
-      if (index === 0) { // 現在のユーザーの署名を更新
-        return { ...sig, isComplete: true, date: new Date() };
-      }
-      return sig;
-    }));
-    
-    // すべての人が署名した場合、プロジェクトの状態を「完了」に更新
-    const allSigned = signatures.every(sig => sig.isComplete);
-    
-    // 3秒後にステータスメッセージと状態を更新
-    setTimeout(() => {
-      if (allSigned) {
-        setProject(prev => ({ ...prev, status: 'completed' }));
-        setStatusMessage('すべての署名が完了しました。遺産分割協議が成立しました！');
-      } else {
-        setStatusMessage('署名が完了しました。他のメンバーの署名を待っています。');
+
+  // 新しい提案を作成
+  const handleCreateProposal = async () => {
+    try {
+      const newProposal = await proposalApi.createProposal({
+        project_id: projectId,
+        title: "新しい提案",
+        content: "ここに提案内容を入力してください。",
+      });
+      
+      // 新しい提案をProposal型に変換して追加
+      const formattedProposal: Proposal = {
+        id: newProposal.id.toString(),
+        title: newProposal.title || '無題の提案',
+        description: newProposal.content || '',
+        supportRate: newProposal.support_rate || 0,
+        points: (newProposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+          id: pt.id ?? idx,
+          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+          content: pt.content
+        })),
+        is_favorite: Boolean(newProposal.is_favorite),
+      };
+      
+      setProposals([
+        formattedProposal,
+        ...proposals
+      ]);
+    } catch (err) {
+      console.error('提案作成エラー:', err);
+      setError('新しい提案の作成に失敗しました');
+    }
+  };
+
+  // 録音完了時の処理
+  const handleRecordingComplete = async (audioBlob: Blob) => {
+    try {
+      // 音声処理中の状態を設定
+      setTranscription('音声を処理中...');
+      
+      // 音声データを送信して文字起こし
+      const result = await conversationApi.transcribeAndSave(
+        projectId,
+        audioBlob,
+        userName // 実際のユーザー名を使用
+      );
+      
+      // メッセージリストに追加
+      if (result.message) {
+        // バックエンドから最新メッセージリストを取得して更新
+        const updatedMessages = await conversationApi.getConversation(projectId);
+        setMessages(updatedMessages);
+        
+        // AIの応答を自動生成
+        generateAiResponse(updatedMessages, result.message.content);
       }
       
-      // さらに3秒後にメッセージを消す（合計6秒）
-      setTimeout(() => {
-        setStatusMessage(null);
-      }, 3000);
-    }, 1500);
+      setTranscription(result.text || '');
+    } catch (err) {
+      console.error('文字起こしエラー:', err);
+      setError('音声の文字起こしに失敗しました');
+      // エラー時も処理は続行（リロードせず）
+      setTranscription('音声の処理中にエラーが発生しました。もう一度お試しください。');
+    }
   };
-  
+
+  // AIの応答を生成する関数
+  const generateAiResponse = async (currentMessages: Message[], userMessage: string) => {
+    // 既にAI処理中の場合は実行しない
+    if (isAiProcessing) return;
+    
+    try {
+      setIsAiProcessing(true);
+      
+      // ユーザーのメッセージを分析して適切な応答を生成
+      // 本来はここでバックエンドのAI応答生成APIを呼び出すべきですが、
+      // モックとして会話コンテキストに基づく応答生成ロジックを実装
+      const aiResponse = await simulateAiResponseGeneration(userMessage, currentMessages);
+      
+      // メッセージをDBに保存
+      await conversationApi.saveMessage({
+        project_id: projectId,
+        content: aiResponse,
+        speaker: "AI相談員",
+        sentiment: 'neutral'
+      });
+      
+      // 保存後に最新のメッセージリストを取得
+      const updatedMessages = await conversationApi.getConversation(projectId);
+      setMessages(updatedMessages);
+    } catch (error) {
+      console.error('AI応答生成エラー:', error);
+    } finally {
+      setIsAiProcessing(false);
+    }
+  };
+
+  // モックAI応答生成（実際の実装ではバックエンドのAI APIを使用）
+  const simulateAiResponseGeneration = async (userMessage: string, conversationHistory: Message[]): Promise<string> => {
+    // 実際の実装では、この関数はバックエンドのAI APIを呼び出すべき
+    // ここではコンテキストに基づく簡易応答ロジックを実装
+    
+    // コンテキストに応じた応答を生成するために、最新のメッセージの内容を解析
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // 少し遅延させてAI応答を返す（非同期処理のシミュレーション）
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // 実家に関する言及がある場合
+    if (lowerMessage.includes('実家') || lowerMessage.includes('家')) {
+      if (lowerMessage.includes('売却') || lowerMessage.includes('売る')) {
+        return '実家の売却をお考えなのですね。売却する場合、他の相続人との合意は取れていますか？また、売却後の資金分配についてはどのようにお考えですか？';
+      }
+      if (lowerMessage.includes('住む') || lowerMessage.includes('住み続け')) {
+        return '実家に住み続けることをお考えですね。どなたが住まれる予定ですか？また、住み続ける方と他の相続人との間で、資産バランスの調整について話し合いはされていますか？';
+      }
+      return '実家についてのお考えをお聞かせいただきありがとうございます。他の財産、例えば預貯金や有価証券などの分割についてはどのようにお考えですか？';
+    }
+    
+    // 財産や資産に関する言及がある場合
+    if (lowerMessage.includes('財産') || lowerMessage.includes('資産') || lowerMessage.includes('お金') || lowerMessage.includes('預金')) {
+      if (lowerMessage.includes('平等') || lowerMessage.includes('公平') || lowerMessage.includes('均等')) {
+        return '財産を平等に分けることをお考えなのですね。法定相続分に従った分割をお考えでしょうか？それとも各相続人の状況に応じた分け方をお考えですか？';
+      }
+      return '資産についてのお考えをお聞かせいただきありがとうございます。相続人の中で特に経済的支援が必要な方はいらっしゃいますか？';
+    }
+    
+    // 家族関係に関する言及がある場合
+    if (lowerMessage.includes('兄弟') || lowerMessage.includes('姉妹') || lowerMessage.includes('子供') || lowerMessage.includes('親')) {
+      return 'ご家族の状況を教えていただきありがとうございます。相続について家族間で話し合いは行われていますか？もし行われているなら、現時点での主な意見の相違点はどのような点でしょうか？';
+    }
+    
+    // 感情的な表現が含まれる場合
+    if (lowerMessage.includes('不安') || lowerMessage.includes('心配') || lowerMessage.includes('怖い')) {
+      return 'ご不安に思われていることがあるのですね。具体的にどのような点が心配ですか？少しでも不安を軽減できるよう、一緒に考えていきましょう。';
+    }
+    
+    if (lowerMessage.includes('争い') || lowerMessage.includes('揉め') || lowerMessage.includes('対立')) {
+      return 'ご家族間の対立を避けたいとお考えですね。それはとても大切なことです。相続によって家族関係が損なわれないよう、どのような点に特に配慮されたいですか？';
+    }
+    
+    // 初期段階でのデフォルト応答
+    if (conversationHistory.length <= 2) {
+      return '状況を教えていただきありがとうございます。相続に関する具体的なご希望やお考えはありますか？例えば、実家の取り扱いや資産分割の方法などについて、理想的な形があれば教えてください。';
+    }
+    
+    // 中盤以降のデフォルト応答
+    if (conversationHistory.length > 4) {
+      return 'ありがとうございます。これまでの会話を踏まえると、相続に関して特に重要視されているのは公平性と家族関係の維持ですね。他に考慮すべき重要な要素はありますか？また、現時点でのご質問はありますか？';
+    }
+    
+    // 一般的なフォローアップ質問
+    return 'ご意見をお聞かせいただきありがとうございます。他に何か気になる点や、相続に関してお考えのことはありますか？';
+  };
+
+  // 論点抽出処理
+  const handleExtractIssues = async () => {
+    try {
+      setActiveTab('discussion'); // まず論点タブに切り替え
+      setIsExtractingIssues(true); // すぐローディング表示
+      setError(null);
+      // バックエンドAPIを呼び出して会話から論点を抽出
+      const result = await issueApi.extractAndSaveIssues(projectId);
+      // 抽出された論点データを取得
+      const extractedIssues = await issueApi.getIssues(projectId);
+      setIssues(extractedIssues);
+      setIsExtractingIssues(false);
+      setLoading(false);
+      // 処理成功メッセージを表示（オプション）
+      if (result && result.message) {
+        // ここでトースト通知などを表示できます
+        console.log(result.message);
+      }
+    } catch (err) {
+      console.error('論点抽出エラー:', err);
+      setError('会話からの論点抽出に失敗しました');
+      setIsExtractingIssues(false);
+      setLoading(false);
+    }
+  };
+
+  // タブ切り替え用コンポーネント
+  const TabButton = ({ tab, label }: { tab: TabType; label: string }) => {
+    const getIcon = () => {
+      switch (tab) {
+        case 'conversation':
+          return (
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+          );
+        case 'discussion':
+          return (
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+          );
+        case 'proposal':
+          return (
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          );
+        case 'signature':
+          return (
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+          );
+        default:
+          return null;
+      }
+    };
+    const isActive = activeTab === tab;
+    return (
+      <button
+        onClick={() => setActiveTab(tab)}
+        className={`flex-1 flex flex-col items-center justify-center py-2 transition-all duration-200 font-semibold relative
+          ${isActive ? 'text-indigo-700 bg-white shadow z-10' : 'text-gray-500 hover:bg-gray-50 cursor-pointer'}
+        `}
+        style={{ minWidth: 0 }}
+        aria-current={isActive ? 'page' : undefined}
+      >
+        {getIcon()}
+        <span className="text-sm font-bold tracking-wide">{label}</span>
+        {/* バッジ */}
+        {tab === 'discussion' && issues.length > 0 && (
+          <span className={`absolute top-2 right-4 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all duration-200
+            ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}
+          >
+            {issues.length}
+          </span>
+        )}
+        {tab === 'proposal' && proposals.length > 0 && (
+          <span className={`absolute top-2 right-4 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all duration-200
+            ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}
+          >
+            {proposals.length}
+          </span>
+        )}
+        {/* アクティブインジケーター */}
+        <span className={`absolute left-0 right-0 top-0 h-1 rounded-t-xl transition-all duration-300
+          ${isActive ? 'bg-indigo-600' : 'bg-transparent'}`}></span>
+      </button>
+    );
+  };
+
   if (loading) {
     return (
-      <div className="flex flex-col min-h-screen">
-        <Header isLoggedIn={true} userName="テストユーザー" />
-        <main className="flex-grow flex items-center justify-center">
-          <p>読み込み中...</p>
+      <div className="min-h-screen flex flex-col">
+        <Header isLoggedIn={true} userName={userName} />
+        <main className="flex-grow bg-gray-50 flex justify-center items-center">
+          <p className="text-gray-600">読み込み中...</p>
         </main>
         <Footer />
       </div>
     );
   }
-  
-  return (
-    <div className="flex flex-col min-h-screen">
-      <Header isLoggedIn={true} userName="テストユーザー" />
-      
-      <main className="flex-grow container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
-          <Link 
-            href="/dashboard" 
-            className="flex items-center text-cyan-600 hover:text-cyan-800"
-          >
-            <ArrowLeftIcon className="h-4 w-4 mr-1" />
-            ダッシュボードに戻る
-          </Link>
-        </div>
-        
-        <p className="text-gray-600 mb-4">{project.description}</p>
-          
-        <div className="mt-4 flex items-center text-sm text-gray-500">
-          <span>ステータス: {project.status === 'active' ? '進行中' : project.status === 'pending' ? '招待中' : '完了'}</span>
-          <span className="mx-2">•</span>
-          <span>メンバー: {project.members.length}人</span>
-          <span className="mx-2">•</span>
-          <span>作成日: {project.createdAt.toLocaleDateString('ja-JP')}</span>
-        </div>
 
-        {/* ステータスメッセージ */}
-        {statusMessage && (
-          <div className="my-4 p-2 bg-blue-50 text-blue-700 rounded">
-            {statusMessage}
+  if (error || !project) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header isLoggedIn={true} userName={userName} />
+        <main className="flex-grow bg-gray-50 flex flex-col justify-center items-center p-4">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 max-w-lg w-full">
+            <p>{error || 'プロジェクトが見つかりませんでした'}</p>
           </div>
-        )}
-        
-        {/* タブナビゲーション */}
-        <div className="mt-6 mb-6 border-b border-gray-200">
-          <nav className="flex -mb-px">
-            <button
-              onClick={() => setActiveTab('conversations')}
-              className={`py-4 px-6 text-center flex flex-col items-center justify-center min-w-[100px] transition-all ${
-                activeTab === 'conversations'
-                  ? 'border-b-4 border-cyan-500 text-cyan-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-b-2 hover:border-gray-300'
-              }`}
-            >
-              <ChatBubbleLeftRightIcon className={`h-6 w-6 mb-1 ${activeTab === 'conversations' ? 'text-cyan-500' : 'text-gray-500'}`} />
-              <span className="font-medium text-base">会話</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('issues')}
-              className={`py-4 px-6 text-center flex flex-col items-center justify-center min-w-[100px] transition-all ${
-                activeTab === 'issues'
-                  ? 'border-b-4 border-cyan-500 text-cyan-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-b-2 hover:border-gray-300'
-              }`}
-            >
-              <ChartBarIcon className={`h-6 w-6 mb-1 ${activeTab === 'issues' ? 'text-cyan-500' : 'text-gray-500'}`} />
-              <span className="font-medium text-base">論点</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('proposals')}
-              className={`py-4 px-6 text-center flex flex-col items-center justify-center min-w-[100px] transition-all ${
-                activeTab === 'proposals'
-                  ? 'border-b-4 border-cyan-500 text-cyan-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-b-2 hover:border-gray-300'
-              }`}
-            >
-              <DocumentTextIcon className={`h-6 w-6 mb-1 ${activeTab === 'proposals' ? 'text-cyan-500' : 'text-gray-500'}`} />
-              <span className="font-medium text-base">提案</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('signatures');
-                
-                // 署名がまだ完了していない場合、フォームにフォーカスを当てる
-                if (!signatures[0]?.isComplete) {
-                  setTimeout(() => {
-                    const input = document.getElementById(
-                      document.getElementById('pin-input') ? 'pin-input' : 'text-input'
-                    );
-                    input?.focus();
-                  }, 100);
-                }
-              }}
-              className={`py-4 px-6 text-center flex flex-col items-center justify-center min-w-[100px] transition-all ${
-                activeTab === 'signatures'
-                  ? 'border-b-4 border-cyan-500 text-cyan-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-b-2 hover:border-gray-300'
-              }`}
-            >
-              <PencilSquareIcon className={`h-6 w-6 mb-1 ${activeTab === 'signatures' ? 'text-cyan-500' : 'text-gray-500'}`} />
-              <span className="font-medium text-base">署名</span>
-            </button>
-          </nav>
-        </div>
-        
-        {/* タブコンテンツ */}
-        <div className="mb-8">
-          {activeTab === 'conversations' && (
-            <div className="bg-white p-6 rounded-lg shadow-sm relative">
-              <h2 className="text-xl font-semibold mb-4">ヒアリング会話</h2>
-              
-              <div className="mb-4">
-                <h3 className="text-lg font-medium mb-2">会話から抽出された情報</h3>
-                
-                {/* 感情分析の概要 */}
-                <div className="mb-4 bg-white border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">感情分析の概要</h4>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="w-full">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-xs text-gray-600">否定的</span>
-                        <span className="text-xs text-gray-600">中立的</span>
-                        <span className="text-xs text-gray-600">肯定的</span>
-                      </div>
-                      {/* 感情分析の可視化 - 実際のデータに基づいて調整する必要があります */}
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div className="flex h-full">
-                          {/* 会話データに基づいて動的に幅を計算 */}
-                          <div className="bg-red-400 rounded-l-full" style={{ 
-                            width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.4).length / Math.max(1, conversations.filter(c => c.sentimentScore !== undefined).length) * 100)}%` 
-                          }}></div>
-                          <div className="bg-yellow-400" style={{ 
-                            width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.4 && c.sentimentScore < 0.6).length / Math.max(1, conversations.filter(c => c.sentimentScore !== undefined).length) * 100)}%` 
-                          }}></div>
-                          <div className="bg-green-400 rounded-r-full" style={{ 
-                            width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.6).length / Math.max(1, conversations.filter(c => c.sentimentScore !== undefined).length) * 100)}%` 
-                          }}></div>
+          <Link 
+            href="/projects" 
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            プロジェクト一覧に戻る
+          </Link>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // 会話タブのコンテンツ
+  const ConversationTab = () => {
+    const userName = useAuth().user?.displayName || "テストユーザー";
+    const userMessages = messages.filter(m => m.speaker === userName);
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+            </svg>
+            <div>
+              <h2 className="text-xl font-semibold">会話</h2>
+              <p className="text-gray-600 text-sm">相続に関するヒアリングを進めています。AIの質問に音声で回答してください。</p>
+            </div>
+          </div>
+          {/* 感情分析の概要表示 */}
+          <div className="mb-6">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-lg font-medium mb-2">感情分析の概要</h3>
+              {/* 一本の感情分析バー */}
+              <div className="mb-2">
+                <div className="relative h-7 bg-gray-200 rounded-full overflow-hidden flex">
+                  {/* 否定的 */}
+                  <div
+                    className="flex items-center justify-center h-full bg-rose-500 text-white text-xs font-bold transition-all duration-300"
+                    style={{
+                      width: `${userMessages.filter(m => m.sentiment === 'negative').length / Math.max(userMessages.length, 1) * 100}%`,
+                      borderTopLeftRadius: '9999px',
+                      borderBottomLeftRadius: '9999px',
+                      marginRight: userMessages.filter(m => m.sentiment === 'neutral').length > 0 ? '2px' : userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                    }}
+                  >
+                    {userMessages.filter(m => m.sentiment === 'negative').length > 0 && (
+                      <span className="drop-shadow-sm">
+                        否定的 {userMessages.filter(m => m.sentiment === 'negative').length}件
+                      </span>
+                    )}
+                  </div>
+                  {/* 中立的 */}
+                  <div
+                    className="flex items-center justify-center h-full bg-yellow-400 text-white text-xs font-bold transition-all duration-300"
+                    style={{
+                      width: `${userMessages.filter(m => m.sentiment === 'neutral').length / Math.max(userMessages.length, 1) * 100}%`,
+                      marginRight: userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                    }}
+                  >
+                    {userMessages.filter(m => m.sentiment === 'neutral').length > 0 && (
+                      <span className="drop-shadow-sm">
+                        中立的 {userMessages.filter(m => m.sentiment === 'neutral').length}件
+                      </span>
+                    )}
+                  </div>
+                  {/* 肯定的 */}
+                  <div
+                    className="flex items-center justify-center h-full bg-emerald-500 text-white text-xs font-bold transition-all duration-300"
+                    style={{
+                      width: `${userMessages.filter(m => m.sentiment === 'positive').length / Math.max(userMessages.length, 1) * 100}%`,
+                      borderTopRightRadius: '9999px',
+                      borderBottomRightRadius: '9999px',
+                    }}
+                  >
+                    {userMessages.filter(m => m.sentiment === 'positive').length > 0 && (
+                      <span className="drop-shadow-sm">
+                        肯定的 {userMessages.filter(m => m.sentiment === 'positive').length}件
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-between px-2 mb-2">
+                <div className="w-1/3 text-center text-xs text-rose-700">{userMessages.filter(m => m.sentiment === 'negative').length}件</div>
+                <div className="w-1/3 text-center text-xs text-yellow-600">{userMessages.filter(m => m.sentiment === 'neutral').length}件</div>
+                <div className="w-1/3 text-center text-xs text-emerald-700">{userMessages.filter(m => m.sentiment === 'positive').length}件</div>
+              </div>
+              <div className="text-sm text-gray-600">
+                会話の中で表明された感情の傾向を表しています。これらの情報は論点抽出や提案作成に活用されます。
+              </div>
+            </div>
+          </div>
+          
+          {/* 会話メッセージ表示エリア - 方向を逆転させた設計 */}
+          <div 
+            className="border rounded-lg mb-6 h-96 max-h-screen bg-gray-50 resize-y cursor-ns-resize flex flex-col-reverse relative"
+            style={{ overflow: 'auto' }}
+          >
+            {/* ローディングインジケーター - 絶対位置で下部中央に固定 */}
+            {(isAiProcessing || transcription === '音声を処理中...') && (
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+                <div className="bg-white bg-opacity-90 rounded-full shadow-md px-4 py-2 flex items-center space-x-2">
+                  <div className="animate-pulse flex space-x-1">
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                    <div className="h-2 w-2 bg-indigo-500 rounded-full"></div>
+                  </div>
+                  <span className="text-xs text-gray-700 font-medium">
+                    {isAiProcessing ? 'AI相談員が回答を考えています...' : '音声を処理中...'}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {/* メッセージコンテナ - 逆方向に表示され、常に最新が見える */}
+            <div className="p-4 w-full">
+              {messages.length === 0 ? (
+                <div className="text-center py-8 w-full">
+                  <p className="text-gray-500 mb-4">AIによるヒアリングを開始します...</p>
+                  <div className="flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 w-full">
+                  {/* 録音・処理中表示を削除（固定ローディングに移動） */}
+                  
+                  {/* メッセージ表示 - 逆順ではなく正順で表示 */}
+                  {messages.map((message) => (
+                    <div 
+                      key={message.id} 
+                      className={`flex ${message.speaker === userName ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div 
+                        className={`max-w-[70%] rounded-lg p-3 ${
+                          message.speaker === userName 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="font-semibold text-sm">{message.speaker}</div>
+                          {message.sentiment && message.speaker === userName && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              message.sentiment === 'positive' ? 'bg-green-100 text-green-800' :
+                              message.sentiment === 'negative' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {message.sentiment === 'positive' ? '肯定的' :
+                               message.sentiment === 'negative' ? '否定的' : '中立的'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm">{message.content}</p>
+                        <div className="text-xs text-right mt-1 text-gray-500">
+                          {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    会話の中で検出された感情の分布です。否定的・中立的・肯定的な発言のバランスを示しています。
-                  </p>
-                  {/* 感情スコアの詳細 */}
-                  <div className="flex justify-between mt-2 text-xs text-gray-500">
-                    <span>否定的: {conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.4).length}件</span>
-                    <span>中立的: {conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.4 && c.sentimentScore < 0.6).length}件</span>
-                    <span>肯定的: {conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.6).length}件</span>
-                  </div>
+                  ))}
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg">
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-1">希望・要望</h4>
-                    <ul className="text-sm text-gray-600 space-y-1 pl-4 list-disc">
-                      {conversations
-                        .filter(conv => conv.intention?.type === 'wish')
-                        .map(conv => (
-                          <li key={conv.id}>{conv.intention?.content}</li>
-                        ))
-                      }
-                      {!conversations.some(conv => conv.intention?.type === 'wish') && (
-                        <li className="text-gray-400">まだ希望や要望は抽出されていません</li>
-                      )}
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-1">譲れない条件</h4>
-                    <ul className="text-sm text-gray-600 space-y-1 pl-4 list-disc">
-                      {conversations
-                        .filter(conv => conv.intention?.type === 'requirement')
-                        .map(conv => (
-                          <li key={conv.id}>{conv.intention?.content}</li>
-                        ))
-                      }
-                      {!conversations.some(conv => conv.intention?.type === 'requirement') && (
-                        <li className="text-gray-400">まだ譲れない条件は抽出されていません</li>
-                      )}
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-1">譲歩可能な点</h4>
-                    <ul className="text-sm text-gray-600 space-y-1 pl-4 list-disc">
-                      {conversations
-                        .filter(conv => conv.intention?.type === 'compromise')
-                        .map(conv => (
-                          <li key={conv.id}>{conv.intention?.content}</li>
-                        ))
-                      }
-                      {!conversations.some(conv => conv.intention?.type === 'compromise') && (
-                        <li className="text-gray-400">まだ譲歩可能な点は抽出されていません</li>
-                      )}
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-1">拒否・反対</h4>
-                    <ul className="text-sm text-gray-600 space-y-1 pl-4 list-disc">
-                      {conversations
-                        .filter(conv => conv.intention?.type === 'rejection')
-                        .map(conv => (
-                          <li key={conv.id}>{conv.intention?.content}</li>
-                        ))
-                      }
-                      {!conversations.some(conv => conv.intention?.type === 'rejection') && (
-                        <li className="text-gray-400">まだ拒否・反対は抽出されていません</li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="border rounded-lg bg-gray-50 p-4 mb-4 h-[300px] md:h-[400px] overflow-y-auto">
-                {conversations.map(conv => (
-                  <MessageBubble
-                    key={conv.id}
-                    message={conv.message}
-                    isUser={conv.isUser}
-                    sentimentScore={conv.sentimentScore}
-                    intention={conv.intention}
-                    keyPoint={conv.keyPoint}
-                    timestamp={conv.timestamp}
-                  />
-                ))}
-              </div>
-              
-              <div className="text-center relative">
-                <PushToTalkButton 
-                  onTranscription={handleTranscription}
-                  onAudioRecorded={handleAudioRecorded}
-                />
-                <div className="mt-2 text-sm text-gray-600">
-                  ボタンを押しながら話すと、AIがあなたの発言を分析します。
-                </div>
-                
-                <div className="mt-6 flex justify-center">
-                  <button
-                    onClick={extractIssuesFromConversations}
-                    disabled={isProcessing || conversations.length < 3}
-                    className="px-6 py-2.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChartBarIcon className="h-5 w-5" />
-                    会話から論点をまとめる
-                  </button>
-                </div>
-                
-                {conversations.length < 3 && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    論点を抽出するには、少なくとも3つの会話メッセージが必要です。
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-          )}
+          </div>
           
-          {activeTab === 'issues' && (
-            <div>
-              <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4">遺産分割の論点分析</h2>
-                <p className="text-gray-600 mb-4">
-                  会話から抽出された重要な論点を分析し、合意形成の進捗状況を可視化しています。各論点の合意度が高いほど、円滑な遺産分割協議が可能になります。
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                  <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                    <h3 className="text-sm font-medium text-green-800 mb-1">高合意の論点</h3>
-                    <p className="text-xs text-green-700">合意度75%以上の論点です。すでに大きな合意ができています。</p>
-                    <div className="mt-2 text-lg font-bold text-green-600">
-                      {/* 肯定的な会話（感情スコア0.6以上）の数に基づいて論点数を表示 */}
-                      {Math.max(1, Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.6).length / 3))}件
-                    </div>
-                  </div>
-                  
-                  <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                    <h3 className="text-sm font-medium text-yellow-800 mb-1">部分合意の論点</h3>
-                    <p className="text-xs text-yellow-700">合意度50-74%の論点です。さらなる協議が必要です。</p>
-                    <div className="mt-2 text-lg font-bold text-yellow-600">
-                      {/* 中立的な会話（感情スコア0.4-0.6）の数に基づいて論点数を表示 */}
-                      {Math.max(1, Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.4 && c.sentimentScore < 0.6).length / 3))}件
-                    </div>
-                  </div>
-                  
-                  <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                    <h3 className="text-sm font-medium text-orange-800 mb-1">要検討の論点</h3>
-                    <p className="text-xs text-orange-700">合意度25-49%の論点です。重点的に協議を進めましょう。</p>
-                    <div className="mt-2 text-lg font-bold text-orange-600">
-                      {/* やや否定的な会話（感情スコア0.3-0.4）の数に基づいて論点数を表示 */}
-                      {Math.max(1, Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.3 && c.sentimentScore < 0.4).length / 2))}件
-                    </div>
-                  </div>
-                  
-                  <div className="bg-red-50 p-3 rounded-lg border border-red-100">
-                    <h3 className="text-sm font-medium text-red-800 mb-1">未合意の論点</h3>
-                    <p className="text-xs text-red-700">合意度25%未満の論点です。最優先で協議が必要です。</p>
-                    <div className="mt-2 text-lg font-bold text-red-600">
-                      {/* 否定的な会話（感情スコア0.3未満）の数に基づいて論点数を表示 */}
-                      {Math.max(1, Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.3).length / 2))}件
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {/* 音声入力コントロール - 独立したフォームとして分離 */}
+          <div className="border-t pt-4">
+            <div className="flex flex-col items-center justify-center">
+              <VoiceRecorder onRecordingComplete={handleRecordingComplete} />
               
-              <IssueMap issues={issues} onIssueUpdate={updateIssueAgreement} />
-              
-              {/* 否定的な会話が一定数以上ある場合に注意を表示 */}
-              {conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.4).length > 1 && (
-                <div className="mt-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg shadow-sm">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-yellow-800">注意: 合意形成が不十分な論点があります</h3>
-                      <div className="mt-2 text-sm text-yellow-700">
-                        <p>
-                          合意度の低い論点がある状態で提案を生成すると、関係者全員が納得できる提案が得られない可能性があります。
-                          まずは会話を続けて合意形成を進めることをお勧めします。
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+              {transcription && (
+                <div className="mt-4 p-3 bg-gray-100 rounded-lg w-full">
+                  <p className="text-gray-700">{transcription}</p>
                 </div>
               )}
               
-              {/* 論点の詳細分析セクション */}
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 優先協議すべき論点 */}
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">優先的に協議すべき論点</h3>
-                  <p className="text-sm text-gray-600 mb-3">合意度が低い順に表示しています。</p>
-                  
-                  {conversations.length > 0 ? (
-                    <ul className="space-y-2">
-                      {[...conversations]
-                        .filter(conv => conv.keyPoint)
-                        .sort((a, b) => (a.sentimentScore || 0) - (b.sentimentScore || 0))
-                        .slice(0, 3)
-                        .map(conv => {
-                          // 会話から抽出した論点の合意度を算出
-                          const agreementScore = Math.round((conv.sentimentScore || 0) * 100);
-                          return (
-                            <li key={conv.id} className="flex items-center p-2 border-l-4 rounded bg-gray-50" style={{
-                              borderColor: agreementScore >= 75 ? 'rgb(22, 163, 74)' :
-                                          agreementScore >= 50 ? 'rgb(202, 138, 4)' :
-                                          agreementScore >= 25 ? 'rgb(234, 88, 12)' :
-                                          'rgb(220, 38, 38)'
-                            }}>
-                              <div className="flex-1">
-                                <h4 className="font-medium text-gray-800">
-                                  {conv.intention?.content || '重要な論点'}
-                                </h4>
-                                <p className="text-xs text-gray-600">{conv.message.substring(0, 50)}...</p>
-                              </div>
-                              <div className="ml-2 flex flex-col items-end">
-                                <div className="text-xs font-semibold" style={{
-                                  color: agreementScore >= 75 ? 'rgb(22, 163, 74)' :
-                                         agreementScore >= 50 ? 'rgb(202, 138, 4)' :
-                                         agreementScore >= 25 ? 'rgb(234, 88, 12)' :
-                                         'rgb(220, 38, 38)'
-                                }}>
-                                  {agreementScore}%
-                                </div>
-                                <div className="w-16 h-2 bg-gray-200 rounded-full mt-1">
-                                  <div 
-                                    className="h-2 rounded-full" 
-                                    style={{
-                                      width: `${agreementScore}%`,
-                                      backgroundColor: agreementScore >= 75 ? 'rgb(22, 163, 74)' :
-                                                       agreementScore >= 50 ? 'rgb(202, 138, 4)' :
-                                                       agreementScore >= 25 ? 'rgb(234, 88, 12)' :
-                                                       'rgb(220, 38, 38)'
-                                    }}
-                                  ></div>
-                                </div>
-                              </div>
-                            </li>
-                          );
-                        })
-                      }
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500 italic">論点がまだ抽出されていません</p>
-                  )}
-                </div>
-                
-                {/* 協議の進捗状況 */}
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">協議の進捗状況</h3>
-                  <p className="text-sm text-gray-600 mb-4">全体的な合意形成の進み具合を示しています。</p>
-                  
-                  {issues.length > 0 ? (
+              <div className="flex space-x-4 mt-4">
+                <button 
+                  type="button"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  onClick={handleExtractIssues}
+                  disabled={messages.length < 3}
+                >
+                  会話から論点をまとめる
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 論点タブのコンテンツ
+  const DiscussionTab = () => (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center mb-6">
+        <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+        </svg>
+        <div>
+          <h2 className="text-xl font-semibold">論点</h2>
+          <p className="text-gray-600 text-sm">会話から抽出された重要な話題と合意形成が必要な事項</p>
+        </div>
+      </div>
+
+      {/* 論点生成中ローディングUI */}
+      {isExtractingIssues && (
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-indigo-500 mb-4"></div>
+          <p className="text-gray-600">AIが論点を生成中です。しばらくお待ちください…</p>
+        </div>
+      )}
+      {!isExtractingIssues && !loading && (
+        <>
+          {/* データなしの場合 */}
+          {issues.length === 0 ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+              <p className="text-gray-600 mb-4">まだ論点が抽出されていません</p>
+              <button 
+                onClick={() => setActiveTab('conversation')}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+              >
+                会話タブで論点を抽出する
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="mb-8 bg-gray-50 p-5 rounded-lg border border-gray-100">
+                <h3 className="font-medium text-lg text-gray-700 mb-4 flex items-center">
+                  <svg className="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+                  </svg>
+                  論点サマリー
+                </h3>
+                <div className="flex flex-wrap gap-6">
+                  {/* 合意済み */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
                     <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600">全体の平均合意度</span>
-                        <span className="font-medium">
-                          {/* 全会話の平均感情スコアから合意度を計算（0-1のスコアを0-100%に変換） */}
-                          {Math.round((conversations.reduce((sum, conv) => sum + (conv.sentimentScore || 0.5), 0) / Math.max(1, conversations.length)) * 100)}%
-                        </span>
-                      </div>
-                      
-                      <div className="w-full h-2.5 bg-gray-200 rounded-full mb-3">
-                        <div 
-                          className="h-2.5 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500" 
-                          style={{
-                            width: `${Math.round((conversations.reduce((sum, conv) => sum + (conv.sentimentScore || 0.5), 0) / Math.max(1, conversations.length)) * 100)}%`
-                          }}
-                        ></div>
-                      </div>
-                      
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>0%</span>
-                        <span>50%</span>
-                        <span>100%</span>
-                      </div>
-                      
-                      <div className="mt-6 space-y-4">
-                        <div className="flex items-center">
-                          <div className="w-32 text-sm">合意形成の完了</div>
-                          <div className="flex-1 bg-gray-200 h-5 rounded overflow-hidden">
-                            <div 
-                              className="bg-green-500 h-full flex items-center justify-end px-2"
-                              style={{ width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.6).length / Math.max(1, conversations.length) * 100)}%` }}
-                            >
-                              <span className="text-xs text-white font-medium">
-                                {Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.6).length / Math.max(1, conversations.length) * 100)}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center">
-                          <div className="w-32 text-sm">進行中の協議</div>
-                          <div className="flex-1 bg-gray-200 h-5 rounded overflow-hidden">
-                            <div 
-                              className="bg-yellow-500 h-full flex items-center justify-end px-2"
-                              style={{ width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.3 && c.sentimentScore < 0.6).length / Math.max(1, conversations.length) * 100)}%` }}
-                            >
-                              <span className="text-xs text-white font-medium">
-                                {Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore >= 0.3 && c.sentimentScore < 0.6).length / Math.max(1, conversations.length) * 100)}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center">
-                          <div className="w-32 text-sm">未着手の課題</div>
-                          <div className="flex-1 bg-gray-200 h-5 rounded overflow-hidden">
-                            <div 
-                              className="bg-red-500 h-full flex items-center justify-end px-2"
-                              style={{ width: `${Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.3).length / Math.max(1, conversations.length) * 100)}%` }}
-                            >
-                              <span className="text-xs text-white font-medium">
-                                {Math.round(conversations.filter(c => c.sentimentScore !== undefined && c.sentimentScore < 0.3).length / Math.max(1, conversations.length) * 100)}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <div className="text-2xl font-bold text-emerald-800">{issues.filter(issue => issue.classification === 'agreed').length}</div>
+                      <div className="text-sm text-emerald-600">合意済み</div>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-40 text-gray-500 italic">
-                      データがありません
+                  </div>
+                  {/* 協議中 */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                      </svg>
                     </div>
-                  )}
+                    <div>
+                      <div className="text-2xl font-bold text-amber-800">{issues.filter(issue => issue.classification === 'discussing').length}</div>
+                      <div className="text-sm text-amber-600">協議中</div>
+                    </div>
+                  </div>
+                  {/* 意見相違 */}
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center mr-3">
+                      <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-rose-800">{issues.filter(issue => issue.classification === 'disagreed').length}</div>
+                      <div className="text-sm text-rose-600">意見相違</div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* 論点リスト - トピック別にグループ化 */}
+              <div className="space-y-6">
+                {/* 論点をトピックごとにグループ化 */}
+                {Array.from(new Set(issues.map(issue => issue.topic || '未分類'))).map(topic => (
+                  <div key={topic} className="">
+                    <div className="divide-y divide-transparent">
+                      {issues.filter(issue => (issue.topic || '未分類') === topic).map(issue => {
+                        // 色分け用クラス
+                        let cardBg = '';
+                        let badgeBg = '';
+                        let badgeText = '';
+                        let badgeIcon = null;
+                        if (issue.classification === 'agreed') {
+                          cardBg = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+                          badgeBg = 'bg-emerald-100 text-emerald-700';
+                          badgeText = '合意済み';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                          );
+                        } else if (issue.classification === 'discussing') {
+                          cardBg = 'bg-amber-50 border-amber-200 text-amber-900';
+                          badgeBg = 'bg-amber-100 text-amber-700';
+                          badgeText = '協議中';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                          );
+                        } else if (issue.classification === 'disagreed') {
+                          cardBg = 'bg-rose-50 border-rose-200 text-rose-900';
+                          badgeBg = 'bg-rose-100 text-rose-700';
+                          badgeText = '意見相違';
+                          badgeIcon = (
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={issue.id}
+                            className={`relative rounded-xl border shadow-sm p-5 mb-4 flex flex-col gap-2 ${cardBg}`}
+                            style={{ minHeight: '100px' }}
+                          >
+                            {/* バッジを右上に小さく */}
+                            <div className={`absolute top-4 right-4 flex items-center px-2 py-0.5 rounded-full text-xs font-semibold shadow-sm ${badgeBg}`}
+                              style={{ zIndex: 2 }}>
+                              {badgeIcon}
+                              {badgeText}
+                            </div>
+                            {/* タイトル（topic） */}
+                            <div className="font-bold text-base mb-1 flex items-center gap-2">
+                              <span>{issue.topic || '論点'}</span>
+                            </div>
+                            {/* 内容 */}
+                            <p className="text-base leading-relaxed mb-1 break-words">{issue.content}</p>
+                            {/* 追加情報 */}
+                            {issue.classification === 'disagreed' && (
+                              <div className="mt-2 text-xs text-rose-700 bg-rose-100 p-2 rounded">
+                                <span className="font-medium">意見の相違：</span>この項目について参加者間で意見が分かれています。詳細な話し合いが必要です。
+                              </div>
+                            )}
+                            {issue.classification === 'agreed' && (
+                              <div className="mt-2 text-xs text-emerald-700 bg-emerald-100 p-2 rounded">
+                                <span className="font-medium">合意事項：</span>この項目については全員の合意が得られています。
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
               
-              <div className="flex justify-center mt-6">
-                <button
-                  onClick={generateProposalsFromIssues}
-                  disabled={isProcessing || issues.length === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              <div className="flex justify-between mt-8">
+                <button 
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                  onClick={() => setActiveTab('conversation')}
                 >
-                  論点から提案を生成
+                  会話に戻る
+                </button>
+                <button 
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  onClick={() => setActiveTab('proposal')}
+                >
+                  提案を見る
                 </button>
               </div>
             </div>
           )}
-          
-          {activeTab === 'proposals' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {proposals.map(proposal => (
-                <ProposalCard
-                  key={proposal.id}
-                  proposal={proposal}
-                  onVote={handleProposalVote}
-                />
-              ))}
-              
-              {proposals.length === 0 && (
-                <div className="col-span-2 text-center py-8">
-                  <p className="text-gray-500">提案がまだ生成されていません。論点タブで「論点から提案を生成」ボタンをクリックしてください。</p>
-                </div>
-              )}
-            </div>
-          )}
-          
-          {activeTab === 'signatures' && (
-            <div className="bg-white p-6 rounded-lg shadow-sm">
-              <h2 className="text-xl font-semibold mb-4">遺産分割協議書に署名する</h2>
-              
-              <div className="mb-6">
-                <h3 className="text-lg font-medium mb-2">署名状況</h3>
-                <ul className="divide-y divide-gray-200">
-                  {signatures.map(sig => (
-                    <li key={sig.id} className="py-3 flex justify-between">
-                      <span>{sig.name}</span>
-                      <span className={sig.isComplete ? "text-green-600 font-medium" : "text-gray-500"}>
-                        {sig.isComplete 
-                          ? `署名済み (${sig.date ? sig.date.toLocaleDateString('ja-JP') : '日時不明'})` 
-                          : '署名待ち'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              
-              <div className="mb-6">
-                <h3 className="text-lg font-medium mb-4">あなたの署名</h3>
-                <SignatureInput 
-                  onComplete={handleSignComplete} 
-                  isComplete={signatures[0]?.isComplete || false} 
-                />
-              </div>
+        </>
+      )}
+    </div>
+  );
 
-              {/* 署名後のアクション */}
-              {signatures[0]?.isComplete && (
-                <div className="mt-8 border-t border-gray-200 pt-6">
-                  <h3 className="text-lg font-medium mb-4">次のステップ</h3>
-                  
-                  {project.status === 'completed' ? (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                      <p className="text-green-800 font-medium">遺産分割協議が成立しました！</p>
-                      <p className="text-green-700 mt-2">全員の署名が完了しました。必要な手続きを行ってください。</p>
-                    </div>
-                  ) : (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                      <p className="text-blue-800 font-medium">あなたの署名が完了しました</p>
-                      <p className="text-blue-700 mt-2">他のメンバーの署名をお待ちください。</p>
-                    </div>
-                  )}
-                  
-                  <div className="flex flex-wrap gap-4 mt-4">
-                    <button
-                      onClick={() => {
-                        // 協議書プレビューを表示
-                        setShowPreview(true);
-                      }}
-                      className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 flex items-center"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      協議書をプレビュー
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        // ダウンロード処理をここに実装
-                        setShowPreview(true);
-                        // プレビューが表示された後、少し遅延させて印刷ダイアログを表示
-                        setTimeout(() => {
-                          window.print();
-                        }, 500);
-                      }}
-                      className="px-4 py-2 bg-gray-100 text-gray-800 border border-gray-300 rounded hover:bg-gray-200 flex items-center"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      協議書をダウンロード
-                    </button>
-                  </div>
+  // 署名タブのコンテンツ
+  const SignatureTab = () => {
+    const userName = useAuth().user?.displayName;
+    const mySignature = userName ? signatures.find(s => s.user_name === userName) : undefined;
+
+    const handleSignatureComplete = async (method: 'pin' | 'text', value: string) => {
+      if (!agreement || !backendUserId) return;
+      try {
+        await signatureApi.createSignature({
+          agreement_id: agreement.id,
+          user_id: backendUserId,
+          method,
+          value
+        });
+        // 署名リストを再取得
+        const sigs = await signatureApi.getSignaturesByAgreement(agreement.id);
+        setSignatures(sigs);
+      } catch {
+        alert('署名の保存に失敗しました');
+      }
+    };
+
+    // 編集用ローカルstate
+    const [editingContent, setEditingContent] = useState(agreementContent);
+    // 編集開始時のみ初期値をセット
+    useEffect(() => {
+      if (isEditingAgreement) {
+        setEditingContent(agreementContent);
+      }
+    }, [isEditingAgreement]);
+
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+          </svg>
+          <div>
+            <h2 className="text-xl font-semibold">署名</h2>
+            <p className="text-gray-600 text-sm">最終提案に基づいた協議書への電子署名</p>
+          </div>
+        </div>
+
+        {/* --- 協議書用紙風カード or 案内メッセージ --- */}
+        {agreement && agreementContent ? (
+          <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
+            <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">{agreement.title || 'サンプルタイトル'}</h2>
+            <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
+            <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent}</div>
+            {/* ▼▼▼ 相続人ごとの署名状況 横並びリスト表示 ▼▼▼ */}
+            <div className="flex flex-col gap-4 mt-10">
+              {members.length === 0 ? (
+                <div className="text-gray-400 text-sm py-8 w-full text-center border rounded-lg bg-gray-50">
+                  相続人（メンバー）が登録されていません。
                 </div>
+              ) : (
+                members.map(member => {
+                  const sig = signatures.find(s => s.user_id === member.user_id);
+                  return (
+                    <div key={member.user_id} className="flex items-center gap-4 w-full">
+                      {/* 左端ラベル */}
+                      <span className="w-40 text-left text-base font-semibold text-gray-800">相続人</span>
+                      {/* 下線（サイン欄風）＋署名済みなら上にユーザー名 */}
+                      <span className="flex-1 relative h-6 flex items-center">
+                        {/* 署名済みなら下線の上に契約書風フォントでユーザー名 */}
+                        {sig && (
+                          <span
+                            className="absolute left-1/2 -translate-x-1/2 -top-1 font-serif font-bold text-lg text-gray-700 tracking-wider select-none leading-none p-0 m-0"
+                            style={{letterSpacing: '0.15em', lineHeight: 1, padding: 0, margin: 0}}>
+                            {member.name || member.user_name}
+                          </span>
+                        )}
+                        <span className="w-full border-b border-gray-300 h-6 block"></span>
+                      </span>
+                      {/* 署名状況（右端） */}
+                      <span className="flex items-center min-w-[120px] justify-end">
+                        {sig ? (
+                          <span className="flex items-center gap-2">
+                            <svg width="48" height="48" viewBox="0 0 48 48" aria-label="同意済み印鑑">
+                              <circle cx="24" cy="24" r="21" fill="#fff" stroke="#e11d48" strokeWidth="3.5" />
+                              <text x="24" y="29" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#e11d48" style={{fontFamily:'serif', letterSpacing: '0.1em'}}>同意</text>
+                            </svg>
+                            <span className="text-xs text-gray-500">{sig.signed_at ? new Date(sig.signed_at).toLocaleDateString() : ''}</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 text-gray-400">
+                            <svg width="48" height="48" viewBox="0 0 48 48" className="opacity-60" aria-label="未同意印鑑">
+                              <circle cx="24" cy="24" r="21" fill="#fff" stroke="#bbb" strokeWidth="3.5" />
+                              <text x="24" y="29" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#bbb" style={{fontFamily:'serif', letterSpacing: '0.1em'}}>未</text>
+                            </svg>
+                            <span className="text-xs">署名待ち</span>
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </div>
+            <div className="flex gap-2 mt-8 justify-end">
+              {!isEditingAgreement && agreement && !signatures.find(s => s.user_name === 'テストユーザー') && (
+                <button className="px-3 py-1 bg-indigo-500 text-white rounded" onClick={() => setIsEditingAgreement(true)} disabled={agreementLoading}>編集</button>
+              )}
+              <button
+                className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                onClick={() => setShowAgreementPreview(true)}
+                disabled={!agreement}
+              >
+                協議書プレビュー
+              </button>
+            </div>
+            {showAgreementPreview && agreement && (
+              <AgreementPreview
+                projectName={project?.title || ''}
+                projectDescription={project?.description || ''}
+                agreementTitle={agreement.title || ''}
+                agreementContent={agreementContent}
+                members={members.map(m => ({id: m.user_id.toString(), name: m.user_name, role: m.role}))}
+                proposals={[]}
+                createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
+                signatures={signatures.map(s => ({
+                  id: s.id.toString(),
+                  name: s.user_name,
+                  isComplete: s.status === 'signed',
+                  date: s.signed_at ? new Date(s.signed_at) : undefined
+                }))}
+                onClose={() => setShowAgreementPreview(false)}
+              />
+            )}
+            {isEditingAgreement && (
+              <div className="mt-6">
+                <textarea
+                  className="w-full border rounded p-2 mb-2"
+                  rows={8}
+                  value={editingContent}
+                  onChange={e => setEditingContent(e.target.value)}
+                  placeholder="協議書の内容を入力してください"
+                  title="協議書内容"
+                />
+                <div className="flex gap-2">
+                  <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={() => { setAgreementContent(editingContent); handleSaveAgreement(); }} disabled={agreementLoading}>保存</button>
+                  <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setEditingContent(agreementContent); }}>キャンセル</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto bg-white shadow rounded-lg border-2 border-gray-200 p-12 text-center text-gray-500 text-lg my-12">
+            協議書がまだ作成されていません。<br />
+            提案タブから協議書を作成してください。
+          </div>
+        )}
+        {/* 署名入力フォーム or 署名済み表示 */}
+        <div className="max-w-2xl mx-auto mt-10">
+          <SignatureInput
+            onComplete={handleSignatureComplete}
+            isComplete={!!mySignature}
+            method={mySignature?.method}
+            value={mySignature?.value}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // 提案タブのコンテンツ
+  const ProposalTab = () => (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <div>
+            <h2 className="text-xl font-semibold">提案</h2>
+            <p className="text-gray-600 text-sm">ニーズに合わせた最適な住まい案</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreateProposal}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            新しい提案を作成
+          </button>
+          <button
+            onClick={handleGenerateAiProposals}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center"
+            disabled={isAiProcessing}
+          >
+            {isAiProcessing ? (
+              <>
+                <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white mr-2"></span>
+                生成中...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  {/* シンプルなプラスマークアイコン */}
+                  <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                AIで提案を作成
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      
+      {/* 提案なしの場合 */}
+      {proposals.length === 0 ? (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+          <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <p className="text-gray-600 mb-4">このプロジェクトにはまだ提案がありません</p>
+          <p className="text-gray-500 mb-4">上のボタンから新しい提案を作成するか、会話を続けてAIに提案を作成してもらいましょう</p>
+          <button
+            onClick={() => setActiveTab('conversation')}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            会話に戻る
+          </button>
+        </div>
+      ) : (
+        <div>
+          {/* ローディング中案内 */}
+          {agreementLoading && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-indigo-500 mb-3"></div>
+              <p className="text-gray-600">協議書をAIが作成中です。しばらくお待ちください…</p>
+            </div>
           )}
+          {/* 提案フィルター/ソートオプション */}
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-6 flex items-center">
+            <div className="mr-4">
+              <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+              </svg>
+            </div>
+            <div className="text-sm text-gray-700">
+              <span className="font-medium">提案件数: {proposals.length}件</span>
+              <span className="mx-3">|</span>
+              <span className="text-indigo-600 font-medium">お気に入り: {proposals.filter(p => p.is_favorite).length}件</span>
+            </div>
+          </div>
+          {/* 提案カードグリッド */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {proposals.map((proposal) => (
+              <ProposalCard
+                key={proposal.id}
+                proposal={proposal}
+                onToggleFavorite={() => handleToggleFavorite(parseInt(proposal.id))}
+                onDelete={() => handleDeleteProposal(parseInt(proposal.id))}
+                onUpdate={handleProposalUpdate}
+                onSelectForAgreement={handleSelectForAgreement}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // AI提案生成ハンドラ
+  const handleGenerateAiProposals = async () => {
+    setIsAiProcessing(true);
+    try {
+      // 論点・会話履歴を取得
+      const issuesData = await issueApi.getIssues(projectId);
+      // AI生成API呼び出し（この時点でDB保存済み）
+      await generateProposals(projectId.toString(), issuesData);
+      // ここでDB保存APIは呼ばず、リストを再取得するだけ
+      const proposalsData = await proposalApi.getProposals(projectId);
+      const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+        id: proposal.id.toString(),
+        title: proposal.title || '無題の提案',
+        description: proposal.content || '',
+        supportRate: proposal.support_rate || 0,
+        points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+          id: pt.id ?? idx,
+          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+          content: pt.content
+        })),
+        selected: proposal.is_selected || false,
+        is_favorite: Boolean(proposal.is_favorite),
+      }))
+      .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+      setProposals(formattedProposals);
+      setError(null);
+    } catch {
+      setError('AIによる提案生成に失敗しました');
+    } finally {
+      setIsAiProcessing(false);
+    }
+  };
+
+  // 提案カードのポイント操作ハンドラ
+  const handleProposalUpdate = async (proposal: Proposal) => {
+    await proposalApi.updateProposal(Number(proposal.id), {
+      title: proposal.title,
+      content: proposal.description,
+      support_rate: proposal.supportRate
+    });
+    // 再取得してリスト更新
+    const proposalsData = await proposalApi.getProposals(projectId);
+    const formattedProposals = (proposalsData as ApiProposal[]).map((p: ApiProposal) => ({
+      id: p.id.toString(),
+      title: p.title || '無題の提案',
+      description: p.content || '',
+      supportRate: p.support_rate || 0,
+      points: (p.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+        id: pt.id ?? idx,
+        type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+        content: pt.content
+      })),
+      selected: p.is_selected || false,
+      is_favorite: Boolean(p.is_favorite),
+    }))
+    .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+    setProposals(formattedProposals);
+  };
+
+  // 協議書作成ボタン押下時のハンドラ
+  const handleSelectForAgreement = async (proposal: Proposal) => {
+    setAgreementLoading(true);
+    setError(null);
+    try {
+      // AIで協議書を生成しDB保存
+      const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(proposal.id));
+      setAgreement(aiAgreement);
+      setAgreementContent(aiAgreement.content);
+      setSelectedAgreementProposal(proposal); // どの提案を元にしたか記録用
+      setShowAgreementPreview(false); // プレビューは自動で開かない
+      setActiveTab('signature'); // 生成完了後に遷移
+    } catch {
+      setError('協議書の生成に失敗しました');
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  // 協議書保存ハンドラ
+  const handleSaveAgreement = async () => {
+    if (!agreement) return;
+    setAgreementLoading(true);
+    try {
+      const updated = await agreementApi.updateAgreement(agreement.id, { content: agreementContent });
+      setAgreement(updated);
+      setIsEditingAgreement(false);
+    } catch {
+      // エラー処理
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header isLoggedIn={true} userName={userName} />
+      <main className="flex-grow bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-6">
+            <Link 
+              href="/projects" 
+              className="text-indigo-600 hover:text-indigo-800 flex items-center mb-2"
+            >
+              ← ダッシュボードに戻る
+            </Link>
+            <h1 className="text-3xl font-bold text-gray-900">{project.title}</h1>
+            <p className="text-gray-600 mt-2">{project.description}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              ステータス: 進行中 • メンバー: 3人 • 作成日: {new Date(project.created_at).toLocaleDateString()}
+            </p>
+          </div>
+          
+          {/* タブナビゲーション */}
+          <div className="mb-6 bg-white rounded-2xl shadow border border-gray-200 overflow-hidden">
+            <div className="flex shadow-sm">
+              <TabButton tab="conversation" label="会話" />
+              <TabButton tab="discussion" label="論点" />
+              <TabButton tab="proposal" label="提案" />
+              <TabButton tab="signature" label="署名" />
+            </div>
+          </div>
+          
+          {/* タブコンテンツ */}
+          <div>
+            {activeTab === 'conversation' && <ConversationTab />}
+            {activeTab === 'discussion' && <DiscussionTab />}
+            {activeTab === 'proposal' && <ProposalTab />}
+            {activeTab === 'signature' && <SignatureTab />}
+          </div>
         </div>
       </main>
-      
       <Footer />
-      
-      {/* 協議書プレビューモーダル */}
-      {showPreview && (
-        <AgreementPreview
-          projectName={project.name}
-          projectDescription={project.description}
-          members={project.members}
-          proposals={proposals}
-          createdAt={project.createdAt}
-          signatures={signatures}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
     </div>
   );
 } 
