@@ -55,6 +55,30 @@ docker compose up
 - Python 3.11（バックエンド開発用）
 - pipenv (Pythonパッケージ管理用)
 
+
+#### Node.jsのインストール
+
+Node.jsがインストールされていない場合は、[Node.js公式サイト](https://nodejs.org/)からインストーラーをダウンロードしてインストールしてください。
+
+```bash
+# バージョン確認
+node -v
+npm -v
+```
+
+#### Pythonとpipenvのインストール
+
+1. [Python公式サイト](https://www.python.org/downloads/)からPython 3.11をインストール
+2. pipenvのインストール:
+
+```bash
+# pipenvのインストール
+pip install pipenv
+
+# バージョン確認
+pipenv --version
+```
+
 ### バックエンド
 ```bash
 cd backend
