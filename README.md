@@ -80,6 +80,11 @@ pipenv --version
 ```
 
 ### バックエンド
+
+#### 環境変数ファイルの準備
+必要に応じて.envファイルを編集して環境設定を行う
+特にGOOGLE_APPLICATION_CREDENTIALS、GEMINI_API_KEYなどの設定があるかどうか確認してください
+
 ```bash
 cd backend
 pipenv install
