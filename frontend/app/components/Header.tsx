@@ -3,19 +3,38 @@
 import Link from 'next/link';
 import { UserCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/app/auth/AuthContext';
+import { useState, useRef, useEffect } from 'react';
 
 interface HeaderProps {
-  userName?: string;
   isLoggedIn?: boolean;
 }
 
-export default function Header({ userName, isLoggedIn }: HeaderProps) {
+export default function Header({ isLoggedIn }: HeaderProps) {
   const { user, logout } = useAuth();
   
-  const isAuthenticated = isLoggedIn !== undefined ? isLoggedIn : !!user;
-  const displayName = userName || user?.displayName || 'ユーザー';
+  const isAuthenticated = typeof isLoggedIn === 'boolean' ? isLoggedIn : !!user;
   
   console.log('Header認証状態:', { isAuthenticated, user: !!user, isLoggedInProp: isLoggedIn });
+  
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // メニュー外クリックで閉じる
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [menuOpen]);
   
   const handleLogout = async () => {
     try {
@@ -34,22 +53,32 @@ export default function Header({ userName, isLoggedIn }: HeaderProps) {
   return (
     <header className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white p-4 shadow-md">
       <div className="container mx-auto flex justify-between items-center">
-        <Link href={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold flex items-center">
+        <Link href={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold flex items-center whitespace-nowrap">
           <SparklesIcon className="h-6 w-6 mr-2" />
           おうちのAI相談室
         </Link>
-        
-        <div className="flex items-center">
+        <div className="flex items-center justify-end w-full">
           {isAuthenticated ? (
-            <div className="flex items-center">
-              <UserCircleIcon className="h-6 w-6 mr-2" />
-              <span className="mr-4">{displayName}</span>
-              <button 
-                onClick={handleLogout}
-                className="bg-white text-cyan-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-50 transition-all duration-300 shadow-sm"
+            <div className="relative flex items-center" ref={menuRef}>
+              <button
+                className="flex items-center focus:outline-none"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
               >
-                ログアウト
+                <UserCircleIcon className="h-7 w-7" />
               </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-2 w-44 bg-white rounded-md shadow-lg z-50 text-gray-700 py-2">
+                  <div className="px-4 py-2 text-sm text-gray-600 border-b">{user?.displayName || 'ユーザー'}</div>
+                  <button
+                    onClick={handleLogout}
+                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <Link 
