@@ -28,7 +28,7 @@ cd house-ai-advisor
 2. 環境変数の設定
 ```bash
 cd backend
-# 事前に配布したenvファイルを.envとして配置してください
+# 事前に配布したenvファイルを.env、dcp-service-account-house-ai-advisor.jsonとして配置してください
 cd ..
 
 cd frontend
