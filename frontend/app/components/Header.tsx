@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { UserCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { UserCircleIcon, SparklesIcon, UserIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/app/auth/AuthContext';
 import { useState, useRef, useEffect } from 'react';
 
@@ -69,11 +69,20 @@ export default function Header({ isLoggedIn }: HeaderProps) {
                 <UserCircleIcon className="h-7 w-7" />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 mt-2 w-44 bg-white rounded-md shadow-lg z-50 text-gray-700 py-2">
-                  <div className="px-4 py-2 text-sm text-gray-600 border-b">{user?.displayName || 'ユーザー'}</div>
+                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-md shadow-lg z-50 text-gray-700 py-2">
+                <div className="px-4 py-2 text-sm text-gray-600 border-b">{user?.displayName || 'ユーザー'}</div>
+                  <div className="py-2 px-2">
+                    <div className="text-xs text-gray-400 font-semibold mb-1 pl-2"/>
+                    <Link href="/dashboard/account" className="flex items-center px-2 py-2 rounded hover:bg-gray-100 text-sm">
+                      <UserIcon className="h-5 w-5 text-cyan-500 mr-2" /> アカウント設定
+                    </Link>
+                    <Link href="/dashboard/help" className="flex items-center px-2 py-2 rounded hover:bg-gray-100 text-sm">
+                      <ChatBubbleLeftRightIcon className="h-5 w-5 text-cyan-500 mr-2" /> ヘルプ
+                    </Link>
+                  </div>
                   <button
                     onClick={handleLogout}
-                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm border-t"
                   >
                     ログアウト
                   </button>

@@ -4,13 +4,7 @@ import { useState, useEffect } from 'react';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
 import Link from 'next/link';
-import { 
-  UserIcon, 
-  UserGroupIcon, 
-  ChatBubbleLeftRightIcon, 
-  FolderIcon,
-  PlusCircleIcon
-} from '@heroicons/react/24/outline';
+import { UserGroupIcon } from '@heroicons/react/24/outline';
 import ProtectedRoute from '@/app/auth/ProtectedRoute';
 import { useAuth } from '@/app/auth/AuthContext';
 import { projectApi } from '@/app/utils/api';
@@ -63,7 +57,7 @@ export default function Dashboard() {
     if (loading) {
       return (
         <div className="flex flex-col min-h-screen">
-          <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+          <Header isLoggedIn={true} />
           <main className="flex-grow flex items-center justify-center">
             <p>読み込み中...</p>
           </main>
@@ -74,13 +68,13 @@ export default function Dashboard() {
     
     return (
       <div className="flex flex-col min-h-screen">
-        <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+        <Header isLoggedIn={true} />
         
         <main className="flex-grow container mx-auto px-4 py-8">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">ダッシュボード</h1>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-white rounded-lg shadow p-6">
+          <div className="mb-8">
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-800 mb-4">あなたの相続プロジェクト</h2>
               {projects.length === 0 ? (
                 <div className="text-center py-8">
@@ -151,44 +145,6 @@ export default function Dashboard() {
                   </Link>
                 </div>
               )}
-            </div>
-            
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">クイックアクセス</h2>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <Link 
-                  href="/projects" 
-                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
-                >
-                  <FolderIcon className="h-8 w-8 text-cyan-500 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">プロジェクト一覧</span>
-                </Link>
-                
-                <Link 
-                  href="/projects/new" 
-                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
-                >
-                  <PlusCircleIcon className="h-8 w-8 text-cyan-500 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">新規プロジェクト</span>
-                </Link>
-                
-                <Link 
-                  href="/dashboard/account" 
-                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
-                >
-                  <UserIcon className="h-8 w-8 text-cyan-500 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">アカウント設定</span>
-                </Link>
-                
-                <Link 
-                  href="/dashboard/help" 
-                  className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-6 rounded-lg"
-                >
-                  <ChatBubbleLeftRightIcon className="h-8 w-8 text-cyan-500 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">ヘルプ</span>
-                </Link>
-              </div>
             </div>
           </div>
           
