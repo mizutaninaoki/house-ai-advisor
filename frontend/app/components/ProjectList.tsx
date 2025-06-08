@@ -154,7 +154,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ userId }) => {
         await projectApi.deleteProject(projectId);
         setProjects(projects.filter(project => project.id !== projectId));
       } catch (err) {
-        setError('プロジェクトの削除に失敗しました');
+        const error = err as Error & { code?: number };
+        if (error.code === 409 || error.message === '関連データが残っているため削除できません') {
+          setError('関連データが残っているため削除できません');
+        } else {
+          setError('プロジェクトの削除に失敗しました');
+        }
         console.error(err);
       }
     }

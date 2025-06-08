@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.db import crud, schemas
 from app.db.session import get_db
@@ -66,10 +67,16 @@ def update_project(project_id: int, project: schemas.ProjectBase, db: Session = 
 @router.delete("/{project_id}", response_model=bool)
 def delete_project(project_id: int, db: Session = Depends(get_db)):
     """プロジェクトを削除する"""
-    success = crud.delete_project(db, project_id=project_id)
-    if not success:
+    db_project = crud.get_project(db, project_id)
+    if not db_project:
         raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
-    return success
+    try:
+        db.delete(db_project)
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="関連データが残っているため削除できません")
 
 # 会話関連のエンドポイント
 @router.get("/{project_id}/conversations", response_model=List[Dict[str, Any]])
