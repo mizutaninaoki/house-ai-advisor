@@ -42,11 +42,23 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
             ))
     return db_project
 
-@router.get("/", response_model=List[schemas.Project])
+@router.get("/", response_model=List[schemas.ProjectDetail])
 def read_projects(user_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """プロジェクト一覧を取得する（ユーザーIDによるフィルタリング可能）"""
     projects = crud.get_projects(db, user_id=user_id, skip=skip, limit=limit)
-    return projects
+    result = []
+    for p in projects:
+        members = crud.get_project_members(db, p.id)
+        result.append(
+            schemas.ProjectDetail(
+                **p.__dict__,
+                conversations=[],
+                proposals=[],
+                issues=[],
+                members=members
+            )
+        )
+    return result
 
 @router.get("/{project_id}", response_model=schemas.ProjectDetail)
 def read_project(project_id: int, db: Session = Depends(get_db)):
