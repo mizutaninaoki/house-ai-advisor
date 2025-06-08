@@ -173,7 +173,7 @@ export default function NewProject() {
   if (loading) {
     return (
       <div className="flex flex-col min-h-screen">
-        <Header isLoggedIn={!!user} userName={user?.displayName || undefined} />
+        <Header isLoggedIn={!!user} />
         <main className="flex-grow flex items-center justify-center">
           <p>読み込み中...</p>
         </main>
@@ -184,7 +184,7 @@ export default function NewProject() {
   
   return (
     <div className="flex flex-col min-h-screen">
-      <Header isLoggedIn={!!user} userName={user?.displayName || undefined} />
+      <Header isLoggedIn={!!user} />
       
       <main className="flex-grow container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">

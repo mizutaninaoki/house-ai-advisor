@@ -97,9 +97,6 @@ export default function Dashboard() {
                         <div className="flex justify-between items-center">
                           <div>
                             <h3 className="text-base font-medium text-cyan-600">{project.title}</h3>
-                            <p className="text-sm text-gray-500">
-                              作成日: {new Date(project.created_at).toLocaleDateString('ja-JP')}
-                            </p>
                             <div className="flex items-center mt-1">
                               <UserGroupIcon className="h-4 w-4 text-gray-400 mr-1" />
                               <span className="text-xs text-gray-500">{project.members ? project.members.length : '-'}人</span>
@@ -113,11 +110,6 @@ export default function Dashboard() {
                                  project.status === 'pending' ? '招待中' : '完了'}
                               </span></>}
                             </div>
-                          </div>
-                          <div>
-                            <span className="text-xs text-gray-500">
-                              {project.role === 'owner' ? '代表者' : '参加者'}
-                            </span>
                           </div>
                         </div>
                       </Link>

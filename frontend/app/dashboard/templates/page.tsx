@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { User } from 'firebase/auth';
 import Link from 'next/link';
 import { DocumentTextIcon, DocumentDuplicateIcon, ArrowDownTrayIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
@@ -19,7 +18,6 @@ interface Template {
 }
 
 export default function DocumentTemplates() {
-  const [user] = useState<User | null>({ displayName: 'テストユーザー', email: 'test@example.com', uid: 'mock-user-id' } as User);
   const [selectedType, setSelectedType] = useState<string>('すべて');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   
@@ -106,7 +104,7 @@ export default function DocumentTemplates() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+      <Header isLoggedIn={true} />
       
       <main className="flex-grow container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">

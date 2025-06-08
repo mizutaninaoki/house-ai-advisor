@@ -33,6 +33,7 @@ class User(UserBase):
 class ProjectBase(BaseSchema):
     title: str
     description: Optional[str] = None
+    status: Optional[str] = None
 
 class ProjectCreate(ProjectBase):
     user_id: int

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { User } from 'firebase/auth';
 import Link from 'next/link';
 import { ChevronDownIcon, ChevronUpIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
@@ -13,7 +12,6 @@ interface FaqItem {
 }
 
 export default function Help() {
-  const [user] = useState<User | null>({ displayName: 'テストユーザー', email: 'test@example.com', uid: 'mock-user-id' } as User);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   
   const toggleFaq = (index: number) => {
@@ -57,7 +55,7 @@ export default function Help() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <Header isLoggedIn={true} userName={user?.displayName || undefined} />
+      <Header isLoggedIn={true} />
       
       <main className="flex-grow container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
