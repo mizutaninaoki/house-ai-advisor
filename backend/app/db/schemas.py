@@ -218,6 +218,9 @@ class SignatureCreate(SignatureBase):
 class Signature(SignatureBase):
     id: int
     created_at: datetime
+    signed_at: Optional[datetime] = None  # 署名日時（created_atと同じ値）
+    status: Optional[str] = "signed"      # 署名ステータス
+    user_name: Optional[str] = None       # ユーザー名（JOINで取得）
 
     class Config:
         from_attributes = True

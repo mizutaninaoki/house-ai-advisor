@@ -280,7 +280,25 @@ def create_signature(db: Session, signature: schemas.SignatureCreate):
     return db_signature
 
 def get_signatures_by_agreement(db: Session, agreement_id: int):
-    return db.query(models.Signature).filter(models.Signature.agreement_id == agreement_id).all()
+    # ユーザー情報もJOINして取得
+    from sqlalchemy.orm import joinedload
+    signatures = db.query(models.Signature).options(joinedload(models.Signature.user)).filter(models.Signature.agreement_id == agreement_id).all()
+    # 各署名にuser_nameを追加
+    result = []
+    for signature in signatures:
+        sig_dict = {
+            "id": signature.id,
+            "agreement_id": signature.agreement_id,
+            "user_id": signature.user_id,
+            "method": signature.method,
+            "value": signature.value,
+            "created_at": signature.created_at,
+            "signed_at": signature.created_at,  # signed_atとしても使用
+            "status": "signed",  # 既存の署名は全て'signed'扱い
+            "user_name": signature.user.name if signature.user else f"ユーザー{signature.user_id}"
+        }
+        result.append(sig_dict)
+    return result
 
 # プロジェクトメンバー関連CRUD
 def get_project_members(db: Session, project_id: int):

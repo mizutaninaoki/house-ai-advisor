@@ -73,7 +73,7 @@ interface Signature {
   user_name: string;
   signed_at: string;
   status: 'pending' | 'signed';
-  method?: 'pin' | 'text';
+  method?: 'text';
   value?: string;
 }
 
@@ -176,16 +176,8 @@ export default function ProjectDetail() {
           } catch (issueErr) {
             console.error('論点データ取得エラー:', issueErr);
           }
-          // 署名情報の取得
-          try {
-            const signaturesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/signatures?project_id=${projectId}`);
-            if (signaturesData.ok) {
-              const signatures = await signaturesData.json();
-              setSignatures(signatures);
-            }
-          } catch (signErr) {
-            console.error('署名データ取得エラー:', signErr);
-          }
+          // 署名情報は協議書が存在する場合のみ取得するため、ここでは初期化のみ
+          setSignatures([]);
           setError(null);
         } catch (err) {
           console.error('データ取得エラー:', err);
@@ -221,21 +213,32 @@ export default function ProjectDetail() {
             setAgreement(data);
             setAgreementContent(data.content);
             // 署名リストも取得
-            const sigs = await signatureApi.getSignaturesByAgreement(data.id);
-            setSignatures(sigs);
+            try {
+              const sigs = await signatureApi.getSignaturesByAgreement(data.id);
+              setSignatures(sigs);
+            } catch (sigErr) {
+              console.error('署名データ取得エラー:', sigErr);
+              setSignatures([]);
+            }
           } else if (selectedAgreementProposal) {
             const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(selectedAgreementProposal.id));
             setAgreement(aiAgreement);
             setAgreementContent(aiAgreement.content);
             // 署名リストも取得
-            const sigs = await signatureApi.getSignaturesByAgreement(aiAgreement.id);
-            setSignatures(sigs);
+            try {
+              const sigs = await signatureApi.getSignaturesByAgreement(aiAgreement.id);
+              setSignatures(sigs);
+            } catch (sigErr) {
+              console.error('署名データ取得エラー:', sigErr);
+              setSignatures([]);
+            }
           } else {
             setAgreement(null);
             setAgreementContent('');
             setSignatures([]);
           }
-        } catch {
+        } catch (err) {
+          console.error('協議書取得エラー:', err);
           setAgreement(null);
           setAgreementContent('');
           setSignatures([]);
@@ -967,24 +970,40 @@ export default function ProjectDetail() {
   // 署名タブのコンテンツ
   const SignatureTab = () => {
     const userName = useAuth().user?.displayName;
-    const mySignature = userName ? signatures.find(s => s.user_name === userName) : undefined;
+    // 署名済み判定：user_idまたはuser_nameで判定
+    const mySignature = signatures.find(s => 
+      (backendUserId && s.user_id === backendUserId) || 
+      (userName && s.user_name === userName)
+    );
+    
+    // デバッグ用ログ（本番環境では削除してください）
+    if (process.env.NODE_ENV === 'development') {
+      console.log('SignatureTab - Debug Info:', {
+        userName,
+        backendUserId,
+        signatures,
+        mySignature,
+        foundByUserId: signatures.find(s => backendUserId && s.user_id === backendUserId),
+        foundByUserName: signatures.find(s => userName && s.user_name === userName)
+      });
+    }
 
-    const handleSignatureComplete = async (method: 'pin' | 'text', value: string) => {
-      if (!agreement || !backendUserId) return;
-      try {
-        await signatureApi.createSignature({
-          agreement_id: agreement.id,
-          user_id: backendUserId,
-          method,
-          value
-        });
-        // 署名リストを再取得
-        const sigs = await signatureApi.getSignaturesByAgreement(agreement.id);
-        setSignatures(sigs);
-      } catch {
-        alert('署名の保存に失敗しました');
-      }
-    };
+      const handleSignatureComplete = async (method: 'text', value: string) => {
+    if (!agreement || !backendUserId) return;
+    try {
+      await signatureApi.createSignature({
+        agreement_id: agreement.id,
+        user_id: backendUserId,
+        method,
+        value
+      });
+      // 署名リストを再取得
+      const sigs = await signatureApi.getSignaturesByAgreement(agreement.id);
+      setSignatures(sigs);
+    } catch {
+      alert('署名の保存に失敗しました');
+    }
+  };
 
     // 編集用ローカルstate
     const [editingContent, setEditingContent] = useState(agreementContent);
@@ -1123,6 +1142,8 @@ export default function ProjectDetail() {
             isComplete={!!mySignature}
             method={mySignature?.method}
             value={mySignature?.value}
+            currentUserName={userName || undefined}
+            disabled={!!mySignature}
           />
         </div>
       </div>
