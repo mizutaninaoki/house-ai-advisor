@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.db import crud, schemas
 from app.db.session import get_db
@@ -41,11 +42,23 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
             ))
     return db_project
 
-@router.get("/", response_model=List[schemas.Project])
+@router.get("/", response_model=List[schemas.ProjectDetail])
 def read_projects(user_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """プロジェクト一覧を取得する（ユーザーIDによるフィルタリング可能）"""
     projects = crud.get_projects(db, user_id=user_id, skip=skip, limit=limit)
-    return projects
+    result = []
+    for p in projects:
+        members = crud.get_project_members(db, p.id)
+        result.append(
+            schemas.ProjectDetail(
+                **p.__dict__,
+                conversations=[],
+                proposals=[],
+                issues=[],
+                members=members
+            )
+        )
+    return result
 
 @router.get("/{project_id}", response_model=schemas.ProjectDetail)
 def read_project(project_id: int, db: Session = Depends(get_db)):
@@ -66,10 +79,16 @@ def update_project(project_id: int, project: schemas.ProjectBase, db: Session = 
 @router.delete("/{project_id}", response_model=bool)
 def delete_project(project_id: int, db: Session = Depends(get_db)):
     """プロジェクトを削除する"""
-    success = crud.delete_project(db, project_id=project_id)
-    if not success:
+    db_project = crud.get_project(db, project_id)
+    if not db_project:
         raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
-    return success
+    try:
+        db.delete(db_project)
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="関連データが残っているため削除できません")
 
 # 会話関連のエンドポイント
 @router.get("/{project_id}/conversations", response_model=List[Dict[str, Any]])

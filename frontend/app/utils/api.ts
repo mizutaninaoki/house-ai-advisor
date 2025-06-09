@@ -514,11 +514,16 @@ export const projectApi = {
     const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
       method: 'DELETE',
     });
-    
     if (!response.ok) {
-      throw new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
+      if (response.status === 409) {
+        const error = new Error('関連データが残っているため削除できません');
+        (error as any).code = 409;
+        throw error;
+      }
+      const error = new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
+      (error as any).code = response.status;
+      throw error;
     }
-    
     return await response.json();
   },
   

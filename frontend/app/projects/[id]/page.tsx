@@ -576,7 +576,7 @@ export default function ProjectDetail() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={true} userName={userName} />
+        <Header isLoggedIn={true} />
         <main className="flex-grow bg-gray-50 flex justify-center items-center">
           <p className="text-gray-600">読み込み中...</p>
         </main>
@@ -588,7 +588,7 @@ export default function ProjectDetail() {
   if (error || !project) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={true} userName={userName} />
+        <Header isLoggedIn={true} />
         <main className="flex-grow bg-gray-50 flex flex-col justify-center items-center p-4">
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 max-w-lg w-full">
             <p>{error || 'プロジェクトが見つかりませんでした'}</p>
@@ -1326,7 +1326,7 @@ export default function ProjectDetail() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header isLoggedIn={true} userName={userName} />
+      <Header isLoggedIn={true} />
       <main className="flex-grow bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-6">
@@ -1338,9 +1338,22 @@ export default function ProjectDetail() {
             </Link>
             <h1 className="text-3xl font-bold text-gray-900">{project.title}</h1>
             <p className="text-gray-600 mt-2">{project.description}</p>
-            <p className="text-sm text-gray-500 mt-1">
-              ステータス: 進行中 • メンバー: 3人 • 作成日: {new Date(project.created_at).toLocaleDateString()}
-            </p>
+            <div className="flex items-center mt-2">
+              <span className="flex items-center mr-4">
+                <svg className="h-4 w-4 text-gray-400 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4a4 4 0 11-8 0 4 4 0 018 0zm6 4v2a2 2 0 01-2 2h-1.5M3 16v2a2 2 0 002 2h1.5" /></svg>
+                <span className="text-xs text-gray-500">{members.length > 0 ? members.length : '-'}人</span>
+              </span>
+              {project.status && (
+                <span className={`text-xs px-2 py-1 rounded-full ml-2 ${
+                  project.status === 'active' ? 'bg-green-100 text-green-800' :
+                  project.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-blue-100 text-blue-800'
+                }`}>
+                  {project.status === 'active' ? '進行中' :
+                   project.status === 'pending' ? '招待中' : '完了'}
+                </span>
+              )}
+            </div>
           </div>
           
           {/* タブナビゲーション */}
