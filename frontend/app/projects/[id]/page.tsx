@@ -78,7 +78,7 @@ interface Signature {
 }
 
 // タブの型定義
-type TabType = 'conversation' | 'discussion' | 'proposal' | 'signature';
+type TabType = 'conversation' | 'discussion' | 'estate' | 'proposal' | 'signature';
 
 interface Agreement {
   id: number;
@@ -88,6 +88,18 @@ interface Agreement {
   content: string;
   status: string;
   is_signed: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+// Estate型定義
+interface Estate {
+  id: number;
+  project_id: number;
+  name: string;
+  address: string;
+  property_tax_value?: number;
+  type?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -116,6 +128,7 @@ export default function ProjectDetail() {
   // プレビュー表示用の状態
   const [showAgreementPreview, setShowAgreementPreview] = useState(false);
   const [members, setMembers] = useState<{ user_id: number; user_name: string; name?: string; role: string }[]>([]);
+  const [estates, setEstates] = useState<Estate[]>([]);
   
   const { backendUserId } = useAuth();
   const hasInitializedConversation = useRef(false); // 追加
@@ -179,6 +192,13 @@ export default function ProjectDetail() {
           // 署名情報は協議書が存在する場合のみ取得するため、ここでは初期化のみ
           setSignatures([]);
           setError(null);
+          // 不動産一覧の取得
+          try {
+            const estatesData = await projectApi.getEstates(projectId);
+            setEstates(estatesData);
+          } catch (estateErr) {
+            console.error('不動産データ取得エラー:', estateErr);
+          }
         } catch (err) {
           console.error('データ取得エラー:', err);
           setError('プロジェクトデータの取得に失敗しました');
@@ -529,6 +549,10 @@ export default function ProjectDetail() {
         case 'discussion':
           return (
             <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+          );
+        case 'estate':
+          return (
+            <svg className="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6" /></svg>
           );
         case 'proposal':
           return (
@@ -1345,6 +1369,44 @@ export default function ProjectDetail() {
     }
   };
 
+  // 遺産タブのコンテンツ
+  const EstateTab = () => (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center mb-6">
+        <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6" /></svg>
+        <div>
+          <h2 className="text-xl font-semibold">遺産</h2>
+        </div>
+      </div>
+      {estates.length === 0 ? (
+        <div className="text-gray-500 text-center py-12">登録された遺産（不動産）はありません。</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="py-2 px-4 border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">名称</th>
+                <th className="py-2 px-4 border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">住所</th>
+                <th className="py-2 px-4 border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">タイプ</th>
+                <th className="py-2 px-4 border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">固定資産税評価額（円）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {estates.map((estate, idx) => (
+                <tr key={estate.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="py-2 px-4 border-b border-gray-200 whitespace-nowrap">{estate.name}</td>
+                  <td className="py-2 px-4 border-b border-gray-200 whitespace-nowrap">{estate.address}</td>
+                  <td className="py-2 px-4 border-b border-gray-200 whitespace-nowrap">{estate.type || '-'}</td>
+                  <td className="py-2 px-4 border-b border-gray-200 whitespace-nowrap">{estate.property_tax_value ? estate.property_tax_value.toLocaleString() : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header isLoggedIn={true} />
@@ -1379,7 +1441,8 @@ export default function ProjectDetail() {
           
           {/* タブナビゲーション */}
           <div className="mb-6 bg-white rounded-2xl shadow border border-gray-200 overflow-hidden">
-            <div className="flex shadow-sm">
+            <div className="flex rounded-lg shadow overflow-hidden mb-8 bg-white">
+              <TabButton tab="estate" label="遺産" />
               <TabButton tab="conversation" label="会話" />
               <TabButton tab="discussion" label="論点" />
               <TabButton tab="proposal" label="提案" />
@@ -1391,6 +1454,7 @@ export default function ProjectDetail() {
           <div>
             {activeTab === 'conversation' && <ConversationTab />}
             {activeTab === 'discussion' && <DiscussionTab />}
+            {activeTab === 'estate' && <EstateTab />}
             {activeTab === 'proposal' && <ProposalTab />}
             {activeTab === 'signature' && <SignatureTab />}
           </div>

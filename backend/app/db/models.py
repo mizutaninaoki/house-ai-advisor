@@ -56,6 +56,7 @@ class Project(Base):
     conversations = relationship("Conversation", back_populates="project")
     proposals = relationship("Proposal", back_populates="project")
     issues = relationship("Issue", back_populates="project", cascade="all, delete-orphan")
+    estates = relationship("Estate", back_populates="project")
 
 # 会話モデル
 class Conversation(Base):
@@ -177,3 +178,18 @@ class ProjectMember(Base):
     role = Column(String, default="member")  # 役割: owner/member など
     relation = Column(String)  # 続柄
     name = Column(String, nullable=True)  # 氏名
+
+# 不動産モデル
+class Estate(Base):
+    __tablename__ = "estates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    property_tax_value = Column(Float, nullable=True)
+    type = Column(String, nullable=True)  # 例: 土地/建物/区分所有など
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project", back_populates="estates")
