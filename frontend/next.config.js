@@ -11,6 +11,7 @@ const pwaConfig = withPWA({
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  devIndicators: false,
 };
 
 export default pwaConfig(nextConfig); 
