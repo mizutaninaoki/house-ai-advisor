@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
-import EstateRegistrationForm, { EstateData } from '@/app/components/EstateRegistrationForm';
+import { EstateData } from '@/app/components/EstateRegistrationForm';
 import { projectApi } from '@/app/utils/api';
 import { useAuth } from '@/app/auth/AuthContext';
 
@@ -27,41 +27,38 @@ type ProjectMemberInput = {
 };
 
 export default function NewProject() {
-  const { user, loading: authLoading, backendUserId } = useAuth();
+  const { user, backendUserId } = useAuth();
   const [step, setStep] = useState(1);
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
-  const [estateData, setEstateData] = useState<EstateData | null>(null);
+  const [estateList, setEstateList] = useState<EstateData[]>([
+    { id: Date.now().toString(), name: '', address: '', propertyTaxValue: undefined, type: '建物' }
+  ]);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  
   const [heirs, setHeirs] = useState<Heir[]>([
     { id: Date.now().toString(), name: '', relation: '', email: '' }
   ]);
-  const router = useRouter();
-  
-  useEffect(() => {
-    // AuthContextからのユーザー情報を利用するため、ローディング状態を更新
-    if (!authLoading) {
-      setLoading(false);
-      if (!user) {
-        // ログインしていなければログイン画面にリダイレクト
-        router.push('/auth/signin');
-      } else {
-        // デバッグ用: ユーザー情報をコンソールに表示
-        console.log('現在のユーザー情報:', {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL
-        });
-      }
-    }
-  }, [user, authLoading, router]);
-  
-  const handleEstateSubmit = (data: EstateData) => {
-    setEstateData(data);
-    setStep(3); // 次のステップへ進む
+
+  // 金融資産（円）
+  const [financialAsset, setFinancialAsset] = useState<number | undefined>(undefined);
+
+  // 不動産入力欄の値変更
+  const handleEstateChange = (index: number, field: keyof EstateData, value: string | number | undefined) => {
+    setEstateList(prev => prev.map((estate, i) => i === index ? { ...estate, [field]: value } : estate));
+  };
+
+  // 入力欄を追加
+  const handleAddEstateRow = () => {
+    setEstateList(prev => [...prev, { id: Date.now().toString(), name: '', address: '', propertyTaxValue: undefined, type: '建物' }]);
+  };
+
+  // 入力欄を削除
+  const handleDeleteEstateRow = (index: number) => {
+    if (estateList.length === 1) return; // 1件は必須
+    setEstateList(prev => prev.filter((_, i) => i !== index));
   };
   
   const handleProjectSubmit = async (e: React.FormEvent) => {
@@ -120,9 +117,19 @@ export default function NewProject() {
       
       // バックエンドAPIを使用してプロジェクトを作成
       const newProject = await projectApi.createProject(projectData);
-      
       console.log('プロジェクト作成成功:', newProject);
-      
+
+      // 不動産をAPIで一括登録
+      for (const estate of estateList) {
+        const { propertyTaxValue, name, address, type } = estate;
+        await projectApi.createEstate(newProject.id, {
+          name: name ?? '',
+          address: address ?? '',
+          type: type ?? '建物',
+          property_tax_value: propertyTaxValue,
+        });
+      }
+
       // 成功後、プロジェクト詳細画面に遷移
       router.push(`/projects/${newProject.id}`);
     } catch (error) {
@@ -169,18 +176,6 @@ export default function NewProject() {
     if (heirs.length === 1) return; // 1人は必須
     setHeirs(prev => prev.filter((_, i) => i !== index));
   };
-  
-  if (loading) {
-    return (
-      <div className="flex flex-col min-h-screen">
-        <Header isLoggedIn={!!user} />
-        <main className="flex-grow flex items-center justify-center">
-          <p>読み込み中...</p>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
   
   return (
     <div className="flex flex-col min-h-screen">
@@ -277,11 +272,115 @@ export default function NewProject() {
               <div>
                 <h2 className="text-xl font-semibold text-gray-800 mb-4">不動産情報の登録</h2>
                 <p className="text-gray-600 mb-6">
-                  相続対象の不動産・資産情報を入力してください。この情報は後からでも編集できます。
+                  相続対象の不動産・資産情報を入力してください。複数件登録できます。
                 </p>
-                
-                <EstateRegistrationForm onSubmit={handleEstateSubmit} />
-                
+                {/* 不動産入力欄を複数行表示 */}
+                <div className="mb-6">
+                  <h3 className="font-medium text-gray-700 mb-2">不動産情報</h3>
+                  {estateList.map((estate, idx) => (
+                    <div key={estate.id} className="bg-white p-4 rounded-lg shadow mb-4 flex flex-col md:flex-row md:items-end gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">名前 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          className="w-full p-2 border border-gray-300 rounded-md"
+                          value={estate.name}
+                          onChange={e => handleEstateChange(idx, 'name', e.target.value)}
+                          placeholder="例：自宅、アパート、駐車場"
+                          required
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">住所・地番 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          className="w-full p-2 border border-gray-300 rounded-md"
+                          value={estate.address}
+                          onChange={e => handleEstateChange(idx, 'address', e.target.value)}
+                          placeholder="例：東京都新宿区西新宿2-8-1"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">タイプ</label>
+                        <div className="flex gap-2 mt-2">
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name={`estate-type-${estate.id}`}
+                              value="建物"
+                              checked={estate.type === '建物' || !estate.type}
+                              onChange={e => handleEstateChange(idx, 'type', e.target.value)}
+                              className="mr-1"
+                            />
+                            建物
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name={`estate-type-${estate.id}`}
+                              value="土地"
+                              checked={estate.type === '土地'}
+                              onChange={e => handleEstateChange(idx, 'type', e.target.value)}
+                              className="mr-1"
+                            />
+                            土地
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name={`estate-type-${estate.id}`}
+                              value="その他"
+                              checked={estate.type === 'その他'}
+                              onChange={e => handleEstateChange(idx, 'type', e.target.value)}
+                              className="mr-1"
+                            />
+                            その他
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">固定資産税評価額（円）</label>
+                        <input
+                          type="number"
+                          className="w-full p-2 border border-gray-300 rounded-md"
+                          value={estate.propertyTaxValue ?? ''}
+                          onChange={e => handleEstateChange(idx, 'propertyTaxValue', e.target.value ? Number(e.target.value) : undefined)}
+                          placeholder="例：30000000"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          className={`text-red-500 hover:underline ml-2 ${estateList.length === 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => handleDeleteEstateRow(idx)}
+                          disabled={estateList.length === 1}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="mt-2 bg-indigo-600 text-white py-1 px-4 rounded-md hover:bg-indigo-700 transition-colors"
+                    onClick={handleAddEstateRow}
+                  >
+                    ＋不動産を追加
+                  </button>
+                </div>
+                {/* 金融資産入力欄 */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">金融資産（円）</label>
+                  <input
+                    type="number"
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                    value={financialAsset ?? ''}
+                    onChange={e => setFinancialAsset(e.target.value ? Number(e.target.value) : undefined)}
+                    placeholder="例：5000000"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">現金・預金・株式などの金融資産合計額を入力してください（任意）</p>
+                </div>
                 <div className="flex justify-between mt-6">
                   <button
                     type="button"
@@ -289,6 +388,14 @@ export default function NewProject() {
                     className="text-gray-600 py-2 px-4 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                   >
                     戻る
+                  </button>
+                  <button
+                    type="button"
+                    className="bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors"
+                    onClick={() => setStep(3)}
+                    disabled={estateList.length === 0}
+                  >
+                    次へ
                   </button>
                 </div>
               </div>
@@ -416,8 +523,8 @@ export default function NewProject() {
                     {projectDescription && (
                       <p><span className="text-gray-500">説明:</span> {projectDescription}</p>
                     )}
-                    {estateData && (
-                      <p><span className="text-gray-500">不動産:</span> {estateData.address}</p>
+                    {estateList.length > 0 && (
+                      <p><span className="text-gray-500">不動産:</span> {estateList.map(e => e.name).join(', ')}</p>
                     )}
                     <div>
                       <span className="text-gray-500">相続人:</span>

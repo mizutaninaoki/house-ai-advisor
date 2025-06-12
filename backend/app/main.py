@@ -20,6 +20,7 @@ from app.db import models
 from app.routers import issues  # 論点APIルーターを追加
 from .routers import agreements
 from .routers import signatures
+from .routers import estates
 
 # データベースのテーブル作成
 # models.Base.metadata.create_all(bind=engine)  # Alembicを使うのでコメントアウト
@@ -47,6 +48,7 @@ app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(issues.router, prefix="/api/issues", tags=["Issues"])  # 論点APIルーターを登録
 app.include_router(agreements.router)
 app.include_router(signatures.router)
+app.include_router(estates.router)
 
 @app.get("/", tags=["Root"])
 async def read_root():

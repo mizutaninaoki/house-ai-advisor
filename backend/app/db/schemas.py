@@ -243,4 +243,22 @@ class ProjectMember(ProjectMemberBase):
 
 # 循環参照を解決するための更新
 ProjectDetail.update_forward_refs()
-ConversationDetail.update_forward_refs() 
+ConversationDetail.update_forward_refs()
+
+class EstateBase(BaseSchema):
+    project_id: int
+    name: str
+    address: str
+    property_tax_value: Optional[float] = None
+    type: Optional[str] = None  # str型で必須ではなく任意
+
+class EstateCreate(EstateBase):
+    pass
+
+class Estate(EstateBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True 

@@ -5,6 +5,11 @@
 // APIのベースURL（環境変数から読み込むか、デフォルト値を使用）
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Error型にcodeプロパティを追加した型
+interface ErrorWithCode extends Error {
+  code?: number;
+}
+
 /**
  * 音声ファイルを文字起こしするAPI
  * @param audioBlob 音声ファイルのBlob
@@ -46,7 +51,7 @@ export async function analyzeSentiment(
   text: string,
   userId?: string,
   context?: string
-): Promise<{ sentiment_score: number; is_positive: boolean; keywords: any[] }> {
+): Promise<{ sentiment_score: number; is_positive: boolean; keywords: { word: string; type: string }[] }> {
   try {
     console.log('テキストの感情分析を実行:', text);
     
@@ -81,7 +86,7 @@ export async function analyzeSentiment(
  * フォールバック用の簡易感情分析（APIが利用できない場合）
  * @private
  */
-function _fallbackSentimentAnalysis(text: string): { sentiment_score: number; is_positive: boolean; keywords: any[] } {
+function _fallbackSentimentAnalysis(text: string): { sentiment_score: number; is_positive: boolean; keywords: { word: string; type: string }[] } {
   console.log('フォールバック感情分析を使用:', text);
   
   const positiveWords = ['良い', '嬉しい', '幸せ', '望ましい', '賛成', '満足', '同意', '希望', '好き', '感謝'];
@@ -111,7 +116,7 @@ function _fallbackSentimentAnalysis(text: string): { sentiment_score: number; is
   score = Math.max(0, Math.min(1, score));
   
   // キーワードリストの生成
-  const keywords = [];
+  const keywords: { word: string; type: string }[] = [];
   positiveWords.forEach(word => {
     if (text.includes(word)) keywords.push({ word, type: 'positive' });
   });
@@ -137,9 +142,9 @@ function _fallbackSentimentAnalysis(text: string): { sentiment_score: number; is
  * @returns 抽出された論点
  */
 export async function extractIssues(
-  messages: any[],
+  messages: { role: string; content: string }[],
   projectId?: string
-): Promise<{ issues: any[]; total_issues_count: number }> {
+): Promise<{ issues: { id: string; title: string; description: string; agreement_score: number; related_messages: number[] }[]; total_issues_count: number }> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/analysis/issues`, {
       method: 'POST',
@@ -189,7 +194,7 @@ export async function extractIssues(
  */
 export async function updateIssueStatus(
   updates: { issue_id: string; agreement_score: number }[]
-): Promise<{ success: boolean; updated_issues: any[] }> {
+): Promise<{ success: boolean; updated_issues: { issue_id: string; agreement_score: number; updated?: boolean }[] }> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/analysis/issues/status`, {
       method: 'PUT',
@@ -224,10 +229,10 @@ export async function updateIssueStatus(
  */
 export async function generateProposals(
   projectId: string,
-  issues: any[],
-  estateData?: any,
-  userPreferences?: any
-): Promise<{ proposals: any[]; recommendation: string }> {
+  issues: { id: string; title: string; description: string; agreement_score: number; related_messages: number[] }[],
+  estateData?: unknown,
+  userPreferences?: unknown
+): Promise<{ proposals: { id: string; title: string; description: string; points: { type: string; content: string }[]; support_rate: number }[]; recommendation: string }> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/proposals/ai/generate`, {
       method: 'POST',
@@ -289,9 +294,9 @@ export async function generateProposals(
  * @returns 比較結果
  */
 export async function compareProposals(
-  proposals: any[],
+  proposals: { id: string; title: string; points: { type: string; content: string }[]; support_rate: number }[],
   criteria?: string[]
-): Promise<{ comparison: any[]; criteria: string[]; recommendation: string }> {
+): Promise<{ comparison: { proposal_id: string; title: string; scores?: Record<string, number> }[]; criteria: string[]; recommendation: string }> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/proposals/compare`, {
       method: 'POST',
@@ -516,12 +521,12 @@ export const projectApi = {
     });
     if (!response.ok) {
       if (response.status === 409) {
-        const error = new Error('関連データが残っているため削除できません');
-        (error as any).code = 409;
+        const error: ErrorWithCode = new Error('関連データが残っているため削除できません');
+        error.code = 409;
         throw error;
       }
-      const error = new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
-      (error as any).code = response.status;
+      const error: ErrorWithCode = new Error(`プロジェクト削除に失敗しました: ${response.statusText}`);
+      error.code = response.status;
       throw error;
     }
     return await response.json();
@@ -531,6 +536,31 @@ export const projectApi = {
   getProjectMembers: async (projectId: number) => {
     const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/members`);
     if (!response.ok) throw new Error('メンバー一覧取得に失敗');
+    return await response.json();
+  },
+  
+  // 不動産を登録
+  createEstate: async (projectId: number, estate: {
+    name: string;
+    address: string;
+    property_tax_value?: number;
+    type?: string;
+  }) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/estates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...estate, project_id: projectId }),
+    });
+    if (!response.ok) {
+      throw new Error(`不動産の登録に失敗しました: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+  
+  // 不動産一覧を取得
+  getEstates: async (projectId: number) => {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/estates`);
+    if (!response.ok) throw new Error('不動産一覧取得に失敗');
     return await response.json();
   },
 };

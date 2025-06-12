@@ -310,4 +310,17 @@ def create_project_member(db: Session, member: schemas.ProjectMemberCreate):
     db.add(db_member)
     db.commit()
     db.refresh(db_member)
-    return db_member 
+    return db_member
+
+def get_estates(db: Session, project_id: int = None):
+    query = db.query(models.Estate)
+    if project_id:
+        query = query.filter(models.Estate.project_id == project_id)
+    return query.all()
+
+def create_estate(db: Session, estate: schemas.EstateCreate):
+    db_estate = models.Estate(**estate.dict())
+    db.add(db_estate)
+    db.commit()
+    db.refresh(db_estate)
+    return db_estate 
