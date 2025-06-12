@@ -133,13 +133,13 @@ export default function ProposalCard({
   return (
     <div 
       className={`
-        bg-white rounded-lg shadow-md p-5 border-l-4
+        bg-white rounded-lg shadow-md p-3 md:p-5 border-l-4
         ${getBorderColor()}
         ${selected ? 'ring-2 ring-green-500 ring-opacity-50' : ''}
         flex flex-col h-full
       `}
     >
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-4 gap-2">
         {editMode ? (
           <input
             className="text-lg font-semibold text-gray-800 border-b border-indigo-200 focus:outline-none focus:border-indigo-500 bg-gray-50 px-2 py-1 rounded"
@@ -151,7 +151,7 @@ export default function ProposalCard({
         ) : (
           <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
         )}
-        <div className="bg-gray-100 text-gray-700 text-sm font-medium px-2 py-1 rounded">
+        <div className="bg-gray-100 text-gray-700 text-sm font-medium px-2 py-1 rounded w-fit">
           賛同率: {supportRate}%
         </div>
       </div>
@@ -232,15 +232,15 @@ export default function ProposalCard({
         </>
       )}
       
-      <div className="flex justify-between mt-4 pt-3 border-t border-gray-100 mt-auto">
+      <div className="flex flex-col sm:flex-row flex-wrap sm:flex-nowrap justify-between mt-4 pt-3 border-t border-gray-100 mt-auto gap-2">
         {editMode ? (
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 w-full">
             <button
-              className="px-3 py-1 bg-green-600 text-white rounded"
+              className="px-3 py-1 bg-green-600 text-white rounded w-full sm:w-auto"
               onClick={handleSave}
             >保存</button>
             <button
-              className="px-3 py-1 bg-gray-300 text-gray-700 rounded"
+              className="px-3 py-1 bg-gray-300 text-gray-700 rounded w-full sm:w-auto"
               onClick={() => {
                 setEditTitle(title);
                 setEditDescription(description);
@@ -251,37 +251,39 @@ export default function ProposalCard({
           </div>
         ) : (
           <>
-            {onVote && isVotingAllowed && (
-              <>
-                <button
-                  onClick={() => onVote(id, true)}
-                  className="flex items-center text-green-600 hover:text-green-800"
-                  title="この提案に賛成"
-                  aria-label="この提案に賛成"
-                >
-                  <CheckCircleIcon className="h-5 w-5 mr-1" />
-                  <span className="text-sm">賛成</span>
-                </button>
-                <button
-                  onClick={() => onVote(id, false)}
-                  className="flex items-center text-red-600 hover:text-red-800"
-                  title="この提案に反対"
-                  aria-label="この提案に反対"
-                >
-                  <XCircleIcon className="h-5 w-5 mr-1" />
-                  <span className="text-sm">反対</span>
-                </button>
-              </>
-            )}
-            <button
-              className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded ml-2"
-              onClick={() => setEditMode(true)}
-            >編集</button>
-            <div className="flex gap-2">
+            <div className="flex flex-row flex-wrap gap-2 w-full sm:w-auto">
+              {onVote && isVotingAllowed && (
+                <>
+                  <button
+                    onClick={() => onVote(id, true)}
+                    className="flex items-center text-green-600 hover:text-green-800 w-full sm:w-auto"
+                    title="この提案に賛成"
+                    aria-label="この提案に賛成"
+                  >
+                    <CheckCircleIcon className="h-5 w-5 mr-1" />
+                    <span className="text-sm">賛成</span>
+                  </button>
+                  <button
+                    onClick={() => onVote(id, false)}
+                    className="flex items-center text-red-600 hover:text-red-800 w-full sm:w-auto"
+                    title="この提案に反対"
+                    aria-label="この提案に反対"
+                  >
+                    <XCircleIcon className="h-5 w-5 mr-1" />
+                    <span className="text-sm">反対</span>
+                  </button>
+                </>
+              )}
+              <button
+                className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded w-full sm:w-auto"
+                onClick={() => setEditMode(true)}
+              >編集</button>
+            </div>
+            <div className="flex flex-row flex-wrap gap-2 w-full sm:w-auto">
               {onToggleFavorite && (
                 <button
                   onClick={onToggleFavorite}
-                  className={`flex items-center ${is_favorite ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-600'}`}
+                  className={`flex items-center ${is_favorite ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-600'} w-full sm:w-auto`}
                   title={is_favorite ? 'お気に入りから外す' : 'お気に入りに追加'}
                   aria-label={is_favorite ? 'お気に入りから外す' : 'お気に入りに追加'}
                 >
@@ -296,7 +298,7 @@ export default function ProposalCard({
               {onDelete && (
                 <button
                   onClick={onDelete}
-                  className="flex items-center text-red-600 hover:text-red-800"
+                  className="flex items-center text-red-600 hover:text-red-800 w-full sm:w-auto"
                   title="提案を削除"
                   aria-label="提案を削除"
                 >
@@ -307,10 +309,10 @@ export default function ProposalCard({
                 </button>
               )}
             </div>
-            <div className="flex flex-col gap-2 ml-auto">
+            <div className="flex flex-col gap-2 w-full sm:w-auto ml-0 sm:ml-auto">
               {onSelectForAgreement && (
                 <button
-                  className="px-3 py-1 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-colors"
+                  className="px-3 py-1 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-colors w-full sm:w-auto"
                   onClick={() => onSelectForAgreement(proposal)}
                 >
                   この提案で協議書を作成
