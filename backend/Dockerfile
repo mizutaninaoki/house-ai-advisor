@@ -9,4 +9,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 開発モードで実行（ホットリロード有効）
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
+# "--port", "${PORT}"のように書くと、Cloud Runでシェルを介さないため、${PORT}が展開されないため下記のように記載
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port $PORT"]

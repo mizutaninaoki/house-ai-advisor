@@ -876,32 +876,40 @@ export const conversationApi = {
       const conversationText = messages.map((m: { content: string }) => m.content).join(' ');
       
       if (conversationText.includes('売却') || conversationText.includes('売る')) {
-        customizedIssues.push({
-          id: 5,
-          content: '実家を売却することへの意向',
-          type: conversationText.includes('売りたくない') ? 'negative' as const : 'positive' as const,
-          agreement_level: 'medium' as const,
-          related_messages: []
-        });
+        if (conversationText.includes('売りたくない')) {
+          customizedIssues.push({
+            id: 5,
+            content: '実家を売却することへの意向',
+            type: 'negative',
+            agreement_level: 'medium',
+            related_messages: [] as number[]
+          });
+        } else {
+          customizedIssues.push({
+            id: 5,
+            content: '実家を売却することへの意向',
+            type: 'positive',
+            agreement_level: 'high',
+            related_messages: [] as number[]
+          });
+        }
       }
-      
       if (conversationText.includes('預金') || conversationText.includes('貯金') || conversationText.includes('現金')) {
         customizedIssues.push({
           id: 6,
           content: '預貯金の分配方法',
-          type: 'neutral' as const,
-          agreement_level: 'high' as const,
-          related_messages: []
+          type: 'neutral',
+          agreement_level: 'low',
+          related_messages: [] as number[]
         });
       }
-      
       if (conversationText.includes('公平') || conversationText.includes('平等')) {
         customizedIssues.push({
           id: 7,
           content: '遺産分割の公平性確保',
-          type: 'requirement' as const,
-          agreement_level: 'high' as const,
-          related_messages: []
+          type: 'requirement',
+          agreement_level: 'medium',
+          related_messages: [] as number[]
         });
       }
       
