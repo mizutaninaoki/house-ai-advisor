@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from 'react';
 
 interface HeaderProps {
   isLoggedIn?: boolean;
+  userName?: string;
 }
 
 export default function Header({ isLoggedIn }: HeaderProps) {

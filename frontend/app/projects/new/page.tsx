@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
@@ -27,7 +27,7 @@ type ProjectMemberInput = {
 };
 
 export default function NewProject() {
-  const { user, backendUserId } = useAuth();
+  const { user, backendUserId, loading: authLoading } = useAuth();
   const [step, setStep] = useState(1);
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
@@ -44,6 +44,15 @@ export default function NewProject() {
 
   // 金融資産（円）
   const [financialAsset, setFinancialAsset] = useState<number | undefined>(undefined);
+
+  // 認証情報のロード完了を待ってリダイレクト
+  useEffect(() => {
+    if (!authLoading) {
+      if (!user) {
+        router.push('/auth/signin');
+      }
+    }
+  }, [user, authLoading, router]);
 
   // 不動産入力欄の値変更
   const handleEstateChange = (index: number, field: keyof EstateData, value: string | number | undefined) => {
@@ -177,6 +186,11 @@ export default function NewProject() {
     setHeirs(prev => prev.filter((_, i) => i !== index));
   };
   
+  // フォームの直前に追加
+  if (authLoading || !user || !backendUserId) {
+    return <div>ログイン情報を取得中です...</div>;
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <Header isLoggedIn={!!user} />
