@@ -3,6 +3,8 @@
 # dependencies
 /node_modules
 /.pnp
+/public/sw.js
+/public/workbox-*.js
 .pnp.*
 .yarn/*
 !.yarn/patches

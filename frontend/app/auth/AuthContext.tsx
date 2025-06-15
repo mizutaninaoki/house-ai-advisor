@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('ユーザー検索URL:', searchUrl);
       
       try {
-        const response = await fetch(searchUrl);
+        const response = await fetch(searchUrl, { credentials: 'include' });
         console.log('検索レスポンス:', response.status);
         
         if (response.ok) {
@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(userData),
+            credentials: 'include',
           });
           
           console.log('作成レスポンス:', createResponse.status);

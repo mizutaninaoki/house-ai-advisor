@@ -13,6 +13,7 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DB_NAME=houseai
+      - CORS_ALLOW_ORIGINS=http://localhost:3000
     restart: unless-stopped
     depends_on:
       - db
@@ -32,6 +33,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    command: npm run dev
 
   db:
     image: postgres:14
