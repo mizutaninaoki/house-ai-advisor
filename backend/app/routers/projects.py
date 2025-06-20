@@ -36,7 +36,7 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
             crud.create_project_member(db, schemas.ProjectMemberCreate(
                 project_id=db_project.id,
                 user_id=db_user.id,
-                role="member",
+                role=member.role,
                 relation=member.relation,
                 name=member.name,
                 email=member.email

@@ -18,12 +18,13 @@ interface Heir {
   email: string;
 }
 
-// ProjectMember型（user_idを含む場合も許容）
+// ProjectMember型（user_idとroleを含む場合も許容）
 type ProjectMemberInput = {
   email: string;
   name: string;
   relation: string;
   user_id?: number;
+  role?: string;
 };
 
 export default function NewProject() {
@@ -104,12 +105,14 @@ export default function NewProject() {
             user_id: backendUserId,
             email: user.email || '',
             name: user.displayName || '',
-            relation: '本人'
+            relation: '本人',
+            role: 'owner'
           },
           ...heirs.map(h => ({
             email: h.email,
             name: h.name,
-            relation: h.relation
+            relation: h.relation,
+            role: 'member'
           }))
         ] as ProjectMemberInput[]
       };

@@ -17,9 +17,10 @@ class UserBase(BaseSchema):
 class UserCreate(UserBase):
     hashed_password: Optional[str] = None
 
-# 追加: relation を持つ UserCreate
+# 追加: relation と role を持つ UserCreate
 class UserWithRelationCreate(UserBase):
     relation: Optional[str] = None
+    role: Optional[str] = "member"
 
 class User(UserBase):
     id: int
