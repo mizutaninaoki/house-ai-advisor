@@ -232,6 +232,7 @@ class ProjectMemberBase(BaseSchema):
     role: str = "member"
     relation: Optional[str] = None  # 続柄
     name: Optional[str] = None  # 氏名
+    email: Optional[str] = None  # メールアドレス
 
 class ProjectMemberCreate(ProjectMemberBase):
     pass

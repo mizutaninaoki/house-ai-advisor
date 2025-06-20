@@ -178,6 +178,7 @@ class ProjectMember(Base):
     role = Column(String, default="member")  # 役割: owner/member など
     relation = Column(String)  # 続柄
     name = Column(String, nullable=True)  # 氏名
+    email = Column(String, nullable=True)  # メールアドレス
 
 # 不動産モデル
 class Estate(Base):

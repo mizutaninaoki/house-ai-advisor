@@ -38,7 +38,8 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
                 user_id=db_user.id,
                 role="member",
                 relation=member.relation,
-                name=member.name
+                name=member.name,
+                email=member.email
             ))
     return db_project
 
