@@ -223,6 +223,7 @@ export async function updateIssueStatus(
  * 論点に基づいて提案を生成するAPI
  * @param projectId プロジェクトID
  * @param issues 論点のリスト
+ * @param userId ユーザーID（提案の作成者）
  * @param estateData 不動産データ（オプション）
  * @param userPreferences ユーザー選好（オプション）
  * @returns 生成された提案
@@ -230,11 +231,16 @@ export async function updateIssueStatus(
 export async function generateProposals(
   projectId: string,
   issues: { id: string; title: string; description: string; agreement_score: number; related_messages: number[] }[],
+  userId?: number,
   estateData?: unknown,
   userPreferences?: unknown
 ): Promise<{ proposals: { id: string; title: string; description: string; points: { type: string; content: string }[]; support_rate: number }[]; recommendation: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/proposals/ai/generate`, {
+    let url = `${API_BASE_URL}/api/proposals/ai/generate`;
+    if (userId) {
+      url += `?user_id=${userId}`;
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -568,10 +574,17 @@ export const projectApi = {
 // 提案関連のAPI
 export const proposalApi = {
   // 提案一覧の取得
-  getProposals: async (projectId?: number) => {
+  getProposals: async (projectId?: number, userId?: number) => {
     let url = `${API_BASE_URL}/api/proposals/`;
+    const params = new URLSearchParams();
     if (projectId) {
-      url += `?project_id=${projectId}`;
+      params.append('project_id', projectId.toString());
+    }
+    if (userId) {
+      params.append('user_id', userId.toString());
+    }
+    if (params.toString()) {
+      url += `?${params.toString()}`;
     }
     
     const response = await fetch(url);
@@ -663,12 +676,17 @@ export const proposalApi = {
 
 // 会話関連のAPI
 export const conversationApi = {
-  // 会話データの取得
-  getConversation: async (projectId: number) => {
+  // 会話データの取得（ユーザーIDでフィルタリング可能）
+  getConversation: async (projectId: number, userId?: number) => {
     try {
       // バックエンドから会話データを取得する
-      // 注: バックエンド側でまだ実装されていなければモックデータではなく空配列を返す
-      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/conversations`);
+      // user_idパラメータが指定されている場合はクエリパラメータとして追加
+      const url = new URL(`${API_BASE_URL}/api/projects/${projectId}/conversations`);
+      if (userId) {
+        url.searchParams.append('user_id', userId.toString());
+      }
+      
+      const response = await fetch(url.toString());
       
       if (response.ok) {
         const data = await response.json();
@@ -691,6 +709,7 @@ export const conversationApi = {
     project_id: number, 
     content: string, 
     speaker: string,
+    user_id?: number,
     sentiment?: 'positive' | 'neutral' | 'negative'
   }) => {
     try {
@@ -717,6 +736,7 @@ export const conversationApi = {
         project_id: messageData.project_id,
         content: messageData.content,
         speaker: messageData.speaker,
+        user_id: messageData.user_id,
         sentiment: messageData.sentiment
       };
 
@@ -748,7 +768,7 @@ export const conversationApi = {
   },
   
   // 音声をアップロードして文字起こし
-  transcribeAndSave: async (projectId: number, audioBlob: Blob, speaker: string) => {
+  transcribeAndSave: async (projectId: number, audioBlob: Blob, speaker: string, userId?: number) => {
     try {
       // 音声文字起こしAPIを呼び出す
       const formData = new FormData();
@@ -792,6 +812,7 @@ export const conversationApi = {
           project_id: projectId,
           content: transcriptionResult.text,
           speaker: speaker,
+          user_id: userId,
           sentiment: sentiment
         };
         
@@ -950,9 +971,13 @@ export const conversationApi = {
 // 論点関連のAPI
 export const issueApi = {
   // プロジェクトの論点一覧を取得
-  getIssues: async (projectId: number) => {
+  getIssues: async (projectId: number, userId?: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/issues?project_id=${projectId}`);
+      let url = `${API_BASE_URL}/api/issues?project_id=${projectId}`;
+      if (userId) {
+        url += `&user_id=${userId}`;
+      }
+      const response = await fetch(url);
       
       if (response.ok) {
         const data = await response.json();
@@ -971,9 +996,13 @@ export const issueApi = {
   },
   
   // 会話から論点を抽出して保存
-  extractAndSaveIssues: async (projectId: number) => {
+  extractAndSaveIssues: async (projectId: number, userId?: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/issues/extract`, {
+      let url = `${API_BASE_URL}/api/issues/extract`;
+      if (userId) {
+        url += `?user_id=${userId}`;
+      }
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

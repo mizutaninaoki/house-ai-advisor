@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -17,6 +18,7 @@ import {
   signatureApi
 } from '@/app/utils/api';
 import AgreementPreview from '@/app/components/AgreementPreview';
+import AgreementDocument from '@/app/components/AgreementDocument';
 import SignatureInput from '@/app/components/SignatureInput';
 import { useAuth } from '@/app/auth/AuthContext';
 
@@ -35,6 +37,7 @@ interface ApiProposal {
   title: string;
   content: string;
   support_rate: number;
+  user_id?: number; // ユーザーID
   is_selected?: boolean;
   is_favorite?: boolean;
   points?: Array<{
@@ -48,6 +51,7 @@ interface Message {
   id: number;
   content: string;
   speaker: string;
+  user_id?: number; // ユーザーID
   timestamp: string;
   sentiment?: 'positive' | 'neutral' | 'negative'; // 感情分析結果
 }
@@ -57,6 +61,7 @@ interface Issue {
   id: number;
   content: string;
   type: 'positive' | 'negative' | 'neutral' | 'requirement';
+  user_id?: number; // ユーザーID
   agreement_level?: 'high' | 'medium' | 'low';
   related_messages?: number[]; // 関連メッセージのID
   topic?: string; // 論点のトピック（例：「相続の分割割合」）
@@ -125,16 +130,35 @@ export default function ProjectDetail() {
   const [agreementContent, setAgreementContent] = useState('');
   const [isEditingAgreement, setIsEditingAgreement] = useState(false);
   const [agreementLoading, setAgreementLoading] = useState(false);
+  const [creatingAgreement, setCreatingAgreement] = useState(false); // 協議書作成中フラグ
   // プレビュー表示用の状態
   const [showAgreementPreview, setShowAgreementPreview] = useState(false);
   const [members, setMembers] = useState<{ user_id: number; user_name: string; name?: string; role: string }[]>([]);
   const [estates, setEstates] = useState<Estate[]>([]);
   
   const { backendUserId } = useAuth();
-  const hasInitializedConversation = useRef(false); // 追加
+  const hasInitializedConversation = useRef(false);
   const userName = useAuth().user?.displayName || "テストユーザー";
 
   useEffect(() => {
+    // activeTabが 'conversation' に設定された時に確実にAI相談員メッセージが表示されるようにする
+    if (activeTab === 'conversation' && !loading && project && backendUserId && !hasInitializedConversation.current) {
+      (async () => {
+        try {
+          const conversationData = await conversationApi.getConversation(projectId, backendUserId || undefined);
+          const hasAiMessages = conversationData.some((msg: Message) => msg.speaker === "AI相談員");
+          if (!hasAiMessages) {
+            displayInitialAiMessage(project);
+            hasInitializedConversation.current = true;
+          }
+        } catch (error) {
+          console.error('会話タブ表示時のメッセージ確認エラー:', error);
+          displayInitialAiMessage(project);
+          hasInitializedConversation.current = true;
+        }
+      })();
+    }
+
     // プロジェクトデータ取得
     if (!isNaN(projectId) && projectId > 0 && loading) {
       const fetchProjectData = async () => {
@@ -143,45 +167,46 @@ export default function ProjectDetail() {
           // プロジェクト詳細の取得
           const projectData = await projectApi.getProject(projectId);
           setProject(projectData);
-          // プロジェクトに関連する提案の取得
-          const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId);
-          const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
-            id: proposal.id.toString(),
-            title: proposal.title || '無題の提案',
-            description: proposal.content || '',
-            supportRate: proposal.support_rate || 0,
-            points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
-              id: pt.id ?? idx,
-              type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
-              content: pt.content
-            })),
-            selected: proposal.is_selected || false,
-            is_favorite: Boolean(proposal.is_favorite),
-          }))
-          .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+          // プロジェクトに関連する提案の取得（ログインユーザーのもののみ）
+          let formattedProposals: Proposal[] = [];
+          if (backendUserId) {
+            const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId, backendUserId);
+            formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+              id: proposal.id.toString(),
+              title: proposal.title || '無題の提案',
+              description: proposal.content || '',
+              supportRate: proposal.support_rate || 0,
+              points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+                id: pt.id ?? idx,
+                type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+                content: pt.content
+              })),
+              selected: proposal.is_selected || false,
+              is_favorite: Boolean(proposal.is_favorite),
+            }))
+            .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+          }
           setProposals(formattedProposals);
           // 会話履歴の取得
           try {
-            const conversationData = await conversationApi.getConversation(projectId);
+            const conversationData = await conversationApi.getConversation(projectId, backendUserId || undefined);
             setMessages(conversationData);
-            if (conversationData.length === 0 && !hasInitializedConversation.current) {
+            const hasAiMessages = conversationData.some((msg: Message) => msg.speaker === "AI相談員");
+            if (!hasAiMessages && !hasInitializedConversation.current) {
               hasInitializedConversation.current = true;
-              setTimeout(() => {
-                displayInitialAiMessage(projectData);
-              }, 1000);
+              displayInitialAiMessage(projectData);
             }
           } catch (convErr) {
             console.error('会話データ取得エラー:', convErr);
             if (!hasInitializedConversation.current) {
               hasInitializedConversation.current = true;
-              setTimeout(() => {
-                displayInitialAiMessage(projectData);
-              }, 1000);
+              displayInitialAiMessage(projectData);
             }
           }
-          // 論点データの取得
+          // 論点データの取得（ログインユーザーのもののみ）
           try {
-            const issuesData = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/issues?project_id=${projectId}`);
+            const issuesUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/issues?project_id=${projectId}${backendUserId ? `&user_id=${backendUserId}` : ''}`;
+            const issuesData = await fetch(issuesUrl);
             if (issuesData.ok) {
               const issues = await issuesData.json();
               setIssues(issues);
@@ -210,17 +235,63 @@ export default function ProjectDetail() {
       return;
     }
 
-    // プロジェクトデータ取得後の論点取得
-    if (project && !loading) {
+    // プロジェクトデータ取得後の論点・提案・メッセージ取得
+    if (project && !loading && backendUserId) {
+      // 会話データの再取得（ユーザー訪問時に確実にAI相談員のメッセージが表示されるようにするため）
+      const fetchConversation = async () => {
+        try {
+          const conversationData = await conversationApi.getConversation(projectId, backendUserId || undefined);
+          setMessages(conversationData);
+          // AI相談員からの会話がない場合は初期メッセージを表示
+          const hasAiMessages = conversationData.some((msg: Message) => msg.speaker === "AI相談員");
+          if (!hasAiMessages && !hasInitializedConversation.current) {
+            hasInitializedConversation.current = true;
+            displayInitialAiMessage(project);
+          }
+        } catch (error) {
+          console.error('会話データ再取得エラー:', error);
+          if (!hasInitializedConversation.current) {
+            hasInitializedConversation.current = true;
+            displayInitialAiMessage(project);
+          }
+        }
+      };
+      fetchConversation();
+      
       const fetchIssues = async () => {
         try {
-          const issuesData = await issueApi.getIssues(projectId);
+          const issuesData = await issueApi.getIssues(projectId, backendUserId);
           setIssues(issuesData);
         } catch (error) {
           console.error('論点データ取得エラー:', error);
         }
       };
       fetchIssues();
+
+      // 提案データの取得（ログインユーザーのもののみ）
+      const fetchProposals = async () => {
+        try {
+          const proposalsData: ApiProposal[] = await proposalApi.getProposals(projectId, backendUserId);
+          const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+            id: proposal.id.toString(),
+            title: proposal.title || '無題の提案',
+            description: proposal.content || '',
+            supportRate: proposal.support_rate || 0,
+            points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+              id: pt.id ?? idx,
+              type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+              content: pt.content
+            })),
+            selected: proposal.is_selected || false,
+            is_favorite: Boolean(proposal.is_favorite),
+          }))
+          .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+          setProposals(formattedProposals);
+        } catch (error) {
+          console.error('提案データ取得エラー:', error);
+        }
+      };
+      fetchProposals();
     }
 
     // 署名タブ表示時の協議書取得・生成
@@ -232,7 +303,7 @@ export default function ProjectDetail() {
           if (data) {
             setAgreement(data);
             setAgreementContent(data.content);
-            // 署名リストも取得
+            // 署名リストも取得（プロジェクト全員に公開）
             try {
               const sigs = await signatureApi.getSignaturesByAgreement(data.id);
               setSignatures(sigs);
@@ -244,7 +315,7 @@ export default function ProjectDetail() {
             const aiAgreement = await agreementApi.generateAgreementAI(projectId, Number(selectedAgreementProposal.id));
             setAgreement(aiAgreement);
             setAgreementContent(aiAgreement.content);
-            // 署名リストも取得
+            // 署名リストも取得（プロジェクト全員に公開）
             try {
               const sigs = await signatureApi.getSignaturesByAgreement(aiAgreement.id);
               setSignatures(sigs);
@@ -268,11 +339,23 @@ export default function ProjectDetail() {
       })();
     }
 
+    // 署名タブで署名状況を定期的に更新（プロジェクト全員に公開）
+    let signatureInterval: NodeJS.Timeout | null = null;
+    if (activeTab === 'signature' && agreement) {
+      signatureInterval = setInterval(async () => {
+        try {
+          const sigs = await signatureApi.getSignaturesByAgreement(agreement.id);
+          setSignatures(sigs);
+        } catch (sigErr) {
+          console.error('署名状況更新エラー:', sigErr);
+        }
+      }, 5000); // 5秒ごとに署名状況を更新
+    }
+
     // プロジェクト参加メンバー一覧の取得
     const fetchMembers = async () => {
       try {
         const membersData: Array<{ user_id: number; user_name?: string; name?: string; role: string }> = await projectApi.getProjectMembers(projectId);
-        console.log('membersData', membersData);
         setMembers(membersData.map((m) => ({
           user_id: m.user_id,
           user_name: m.user_name || `ユーザー${m.user_id}`,
@@ -284,7 +367,13 @@ export default function ProjectDetail() {
       }
     };
     if (projectId) fetchMembers();
-  }, [projectId, loading, project, activeTab, selectedAgreementProposal]);
+
+    return () => {
+      if (signatureInterval) {
+        clearInterval(signatureInterval);
+      }
+    };
+  }, [projectId, loading, project, activeTab, selectedAgreementProposal, backendUserId, hasInitializedConversation.current]);
 
   // プロジェクト情報を基に初期AIメッセージを表示
   const displayInitialAiMessage = (projectData: Project) => {
@@ -296,15 +385,24 @@ export default function ProjectDetail() {
       sentiment: 'neutral'
     };
     
-    setMessages([initialMessage]);
-    
-    // メッセージをDBに保存
+    // メッセージをDBに保存（AI相談員の質問にuser_idを設定）
     conversationApi.saveMessage({
       project_id: projectId,
       content: initialMessage.content,
       speaker: initialMessage.speaker,
+      user_id: backendUserId || undefined, // AI相談員の質問も特定のユーザーに対するものとして記録
       sentiment: initialMessage.sentiment
-    }).catch(err => console.error('初期メッセージの保存に失敗:', err));
+    }).then(savedMessage => {
+      // 保存したメッセージをメッセージリストに追加
+      setMessages(prevMessages => [{ 
+        ...savedMessage, 
+        // バックエンドから返されたプロパティがなければ初期値を設定
+        id: savedMessage.id || initialMessage.id,
+        timestamp: savedMessage.timestamp || initialMessage.timestamp,
+        sentiment: savedMessage.sentiment || initialMessage.sentiment
+      }, ...prevMessages]);
+    })
+    .catch(err => console.error('初期メッセージの保存に失敗:', err));
   };
 
   // プロジェクト情報に基づいた初期挨拶を生成
@@ -358,38 +456,7 @@ export default function ProjectDetail() {
     }
   };
 
-  // 新しい提案を作成
-  const handleCreateProposal = async () => {
-    try {
-      const newProposal = await proposalApi.createProposal({
-        project_id: projectId,
-        title: "新しい提案",
-        content: "ここに提案内容を入力してください。",
-      });
-      
-      // 新しい提案をProposal型に変換して追加
-      const formattedProposal: Proposal = {
-        id: newProposal.id.toString(),
-        title: newProposal.title || '無題の提案',
-        description: newProposal.content || '',
-        supportRate: newProposal.support_rate || 0,
-        points: (newProposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
-          id: pt.id ?? idx,
-          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
-          content: pt.content
-        })),
-        is_favorite: Boolean(newProposal.is_favorite),
-      };
-      
-      setProposals([
-        formattedProposal,
-        ...proposals
-      ]);
-    } catch (err) {
-      console.error('提案作成エラー:', err);
-      setError('新しい提案の作成に失敗しました');
-    }
-  };
+
 
   // 録音完了時の処理
   const handleRecordingComplete = async (audioBlob: Blob) => {
@@ -401,13 +468,14 @@ export default function ProjectDetail() {
       const result = await conversationApi.transcribeAndSave(
         projectId,
         audioBlob,
-        userName // 実際のユーザー名を使用
+        userName, // 実際のユーザー名を使用
+        backendUserId || undefined // ユーザーIDを設定
       );
       
       // メッセージリストに追加
       if (result.message) {
-        // バックエンドから最新メッセージリストを取得して更新
-        const updatedMessages = await conversationApi.getConversation(projectId);
+        // バックエンドから最新メッセージリストを取得して更新（ユーザーIDでフィルタリング）
+        const updatedMessages = await conversationApi.getConversation(projectId, backendUserId || undefined);
         setMessages(updatedMessages);
         
         // AIの応答を自動生成
@@ -436,16 +504,17 @@ export default function ProjectDetail() {
       // モックとして会話コンテキストに基づく応答生成ロジックを実装
       const aiResponse = await simulateAiResponseGeneration(userMessage, currentMessages);
       
-      // メッセージをDBに保存
+      // メッセージをDBに保存（AI相談員の応答にuser_idを設定）
       await conversationApi.saveMessage({
         project_id: projectId,
         content: aiResponse,
         speaker: "AI相談員",
+        user_id: backendUserId || undefined, // AI相談員の応答も特定のユーザーに対するものとして記録
         sentiment: 'neutral'
       });
       
-      // 保存後に最新のメッセージリストを取得
-      const updatedMessages = await conversationApi.getConversation(projectId);
+      // 保存後に最新のメッセージリストを取得（ユーザーIDでフィルタリング）
+      const updatedMessages = await conversationApi.getConversation(projectId, backendUserId || undefined);
       setMessages(updatedMessages);
     } catch (error) {
       console.error('AI応答生成エラー:', error);
@@ -519,9 +588,9 @@ export default function ProjectDetail() {
       setIsExtractingIssues(true); // すぐローディング表示
       setError(null);
       // バックエンドAPIを呼び出して会話から論点を抽出
-      const result = await issueApi.extractAndSaveIssues(projectId);
-      // 抽出された論点データを取得
-      const extractedIssues = await issueApi.getIssues(projectId);
+      const result = await issueApi.extractAndSaveIssues(projectId, backendUserId || undefined);
+      // 抽出された論点データを取得（ログインユーザーのもののみ）
+      const extractedIssues = await issueApi.getIssues(projectId, backendUserId || undefined);
       setIssues(extractedIssues);
       setIsExtractingIssues(false);
       setLoading(false);
@@ -579,11 +648,11 @@ export default function ProjectDetail() {
         {getIcon()}
         <span className="text-sm font-bold tracking-wide">{label}</span>
         {/* バッジ */}
-        {tab === 'discussion' && issues.length > 0 && (
+        {tab === 'discussion' && issues.filter(issue => issue.user_id === backendUserId).length > 0 && (
           <span className={`absolute top-2 right-4 px-1.5 py-0.5 rounded-full text-xs font-bold transition-all duration-200
             ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}
           >
-            {issues.length}
+            {issues.filter(issue => issue.user_id === backendUserId).length}
           </span>
         )}
         {tab === 'proposal' && proposals.length > 0 && (
@@ -634,8 +703,8 @@ export default function ProjectDetail() {
 
   // 会話タブのコンテンツ
   const ConversationTab = () => {
-    const userName = useAuth().user?.displayName || "テストユーザー";
-    const userMessages = messages.filter(m => m.speaker === userName);
+    // ユーザー発言のみ（AI相談員を除く）を感情分析対象とする
+    const userOnlyMessages = messages.filter(m => m.speaker !== 'AI相談員' && m.user_id === backendUserId);
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="mb-6">
@@ -659,15 +728,15 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-rose-500 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${userMessages.filter(m => m.sentiment === 'negative').length / Math.max(userMessages.length, 1) * 100}%`,
+                      width: `${userOnlyMessages.filter(m => m.sentiment === 'negative').length / Math.max(userOnlyMessages.length, 1) * 100}%`,
                       borderTopLeftRadius: '9999px',
                       borderBottomLeftRadius: '9999px',
-                      marginRight: userMessages.filter(m => m.sentiment === 'neutral').length > 0 ? '2px' : userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                      marginRight: userOnlyMessages.filter(m => m.sentiment === 'neutral').length > 0 ? '2px' : userOnlyMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
                     }}
                   >
-                    {userMessages.filter(m => m.sentiment === 'negative').length > 0 && (
+                    {userOnlyMessages.filter(m => m.sentiment === 'negative').length > 0 && (
                       <span className="drop-shadow-sm">
-                        否定的 {userMessages.filter(m => m.sentiment === 'negative').length}件
+                        否定的 {userOnlyMessages.filter(m => m.sentiment === 'negative').length}件
                       </span>
                     )}
                   </div>
@@ -675,13 +744,13 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-yellow-400 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${userMessages.filter(m => m.sentiment === 'neutral').length / Math.max(userMessages.length, 1) * 100}%`,
-                      marginRight: userMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
+                      width: `${userOnlyMessages.filter(m => m.sentiment === 'neutral').length / Math.max(userOnlyMessages.length, 1) * 100}%`,
+                      marginRight: userOnlyMessages.filter(m => m.sentiment === 'positive').length > 0 ? '2px' : '0',
                     }}
                   >
-                    {userMessages.filter(m => m.sentiment === 'neutral').length > 0 && (
+                    {userOnlyMessages.filter(m => m.sentiment === 'neutral').length > 0 && (
                       <span className="drop-shadow-sm">
-                        中立的 {userMessages.filter(m => m.sentiment === 'neutral').length}件
+                        中立的 {userOnlyMessages.filter(m => m.sentiment === 'neutral').length}件
                       </span>
                     )}
                   </div>
@@ -689,23 +758,23 @@ export default function ProjectDetail() {
                   <div
                     className="flex items-center justify-center h-full bg-emerald-500 text-white text-xs font-bold transition-all duration-300"
                     style={{
-                      width: `${userMessages.filter(m => m.sentiment === 'positive').length / Math.max(userMessages.length, 1) * 100}%`,
+                      width: `${userOnlyMessages.filter(m => m.sentiment === 'positive').length / Math.max(userOnlyMessages.length, 1) * 100}%`,
                       borderTopRightRadius: '9999px',
                       borderBottomRightRadius: '9999px',
                     }}
                   >
-                    {userMessages.filter(m => m.sentiment === 'positive').length > 0 && (
+                    {userOnlyMessages.filter(m => m.sentiment === 'positive').length > 0 && (
                       <span className="drop-shadow-sm">
-                        肯定的 {userMessages.filter(m => m.sentiment === 'positive').length}件
+                        肯定的 {userOnlyMessages.filter(m => m.sentiment === 'positive').length}件
                       </span>
                     )}
                   </div>
                 </div>
               </div>
               <div className="flex justify-between px-2 mb-2">
-                <div className="w-1/3 text-center text-xs text-rose-700">{userMessages.filter(m => m.sentiment === 'negative').length}件</div>
-                <div className="w-1/3 text-center text-xs text-yellow-600">{userMessages.filter(m => m.sentiment === 'neutral').length}件</div>
-                <div className="w-1/3 text-center text-xs text-emerald-700">{userMessages.filter(m => m.sentiment === 'positive').length}件</div>
+                <div className="w-1/3 text-center text-xs text-rose-700">{userOnlyMessages.filter(m => m.sentiment === 'negative').length}件</div>
+                <div className="w-1/3 text-center text-xs text-yellow-600">{userOnlyMessages.filter(m => m.sentiment === 'neutral').length}件</div>
+                <div className="w-1/3 text-center text-xs text-emerald-700">{userOnlyMessages.filter(m => m.sentiment === 'positive').length}件</div>
               </div>
               <div className="text-sm text-gray-600">
                 会話の中で表明された感情の傾向を表しています。これらの情報は論点抽出や提案作成に活用されます。
@@ -738,7 +807,6 @@ export default function ProjectDetail() {
             <div className="p-4 w-full">
               {messages.length === 0 ? (
                 <div className="text-center py-8 w-full">
-                  <p className="text-gray-500 mb-4">AIによるヒアリングを開始します...</p>
                   <div className="flex justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
                   </div>
@@ -747,22 +815,22 @@ export default function ProjectDetail() {
                 <div className="space-y-4 w-full">
                   {/* 録音・処理中表示を削除（固定ローディングに移動） */}
                   
-                  {/* メッセージ表示 - 逆順ではなく正順で表示 */}
-                  {messages.map((message) => (
-                    <div 
-                      key={message.id} 
-                      className={`flex ${message.speaker === userName ? 'justify-end' : 'justify-start'}`}
+                  {/* メッセージ表示 - プロジェクトの全会話を表示 */}
+                  {messages.map((message, index) => (
+                    <div
+                      key={`${message.id}-${index}`} 
+                      className={`flex ${message.speaker !== 'AI相談員' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div 
+                      <div
                         className={`max-w-[70%] rounded-lg p-3 ${
-                          message.speaker === userName 
+                          message.speaker !== 'AI相談員' 
                             ? 'bg-blue-100 text-blue-800' 
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
                         <div className="flex justify-between items-center mb-1">
                           <div className="font-semibold text-sm">{message.speaker}</div>
-                          {message.sentiment && message.speaker === userName && (
+                          {message.sentiment && message.speaker !== 'AI相談員' && (
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               message.sentiment === 'positive' ? 'bg-green-100 text-green-800' :
                               message.sentiment === 'negative' ? 'bg-red-100 text-red-800' :
@@ -814,17 +882,21 @@ export default function ProjectDetail() {
   };
 
   // 論点タブのコンテンツ
-  const DiscussionTab = () => (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex items-center mb-6">
-        <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
-        </svg>
-        <div>
-          <h2 className="text-xl font-semibold">論点</h2>
-          <p className="text-gray-600 text-sm">会話から抽出された重要な話題と合意形成が必要な事項</p>
+  const DiscussionTab = () => {
+    // ログインユーザーの論点のみをフィルタリング
+    const userIssues = issues.filter(issue => issue.user_id === backendUserId);
+    
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <svg className="w-7 h-7 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+          </svg>
+          <div>
+            <h2 className="text-xl font-semibold">論点</h2>
+            <p className="text-gray-600 text-sm">あなたの会話から抽出された重要な話題と合意形成が必要な事項</p>
+          </div>
         </div>
-      </div>
 
       {/* 論点生成中ローディングUI */}
       {isExtractingIssues && (
@@ -836,7 +908,7 @@ export default function ProjectDetail() {
       {!isExtractingIssues && !loading && (
         <>
           {/* データなしの場合 */}
-          {issues.length === 0 ? (
+          {userIssues.length === 0 ? (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
               <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
@@ -866,45 +938,45 @@ export default function ProjectDetail() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
                       </svg>
                     </div>
-                    <div>
-                      <div className="text-2xl font-bold text-emerald-800">{issues.filter(issue => issue.classification === 'agreed').length}</div>
-                      <div className="text-sm text-emerald-600">合意済み</div>
-                    </div>
+                                      <div>
+                    <div className="text-2xl font-bold text-emerald-800">{userIssues.filter(issue => issue.classification === 'agreed').length}</div>
+                    <div className="text-sm text-emerald-600">合意済み</div>
                   </div>
-                  {/* 協議中 */}
-                  <div className="flex items-center">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mr-3">
-                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-amber-800">{issues.filter(issue => issue.classification === 'discussing').length}</div>
-                      <div className="text-sm text-amber-600">協議中</div>
-                    </div>
+                </div>
+                {/* 協議中 */}
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                    </svg>
                   </div>
-                  {/* 意見相違 */}
-                  <div className="flex items-center">
-                    <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center mr-3">
-                      <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-rose-800">{issues.filter(issue => issue.classification === 'disagreed').length}</div>
-                      <div className="text-sm text-rose-600">意見相違</div>
-                    </div>
+                  <div>
+                    <div className="text-2xl font-bold text-amber-800">{userIssues.filter(issue => issue.classification === 'discussing').length}</div>
+                    <div className="text-sm text-amber-600">協議中</div>
                   </div>
+                </div>
+                {/* 意見相違 */}
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-rose-800">{userIssues.filter(issue => issue.classification === 'disagreed').length}</div>
+                    <div className="text-sm text-rose-600">意見相違</div>
+                  </div>
+                </div>
                 </div>
               </div>
 
               {/* 論点リスト - トピック別にグループ化 */}
               <div className="space-y-6">
                 {/* 論点をトピックごとにグループ化 */}
-                {Array.from(new Set(issues.map(issue => issue.topic || '未分類'))).map(topic => (
+                {Array.from(new Set(userIssues.map(issue => issue.topic || '未分類'))).map(topic => (
                   <div key={topic} className="">
                     <div className="divide-y divide-transparent">
-                      {issues.filter(issue => (issue.topic || '未分類') === topic).map(issue => {
+                      {userIssues.filter(issue => (issue.topic || '未分類') === topic).map(issue => {
                         // 色分け用クラス
                         let cardBg = '';
                         let badgeBg = '';
@@ -989,42 +1061,64 @@ export default function ProjectDetail() {
         </>
       )}
     </div>
-  );
+    );
+  };
 
   // 署名タブのコンテンツ
   const SignatureTab = () => {
     const userName = useAuth().user?.displayName;
-    // 署名済み判定：user_idまたはuser_nameで判定
-    const mySignature = signatures.find(s => 
-      (backendUserId && s.user_id === backendUserId) || 
-      (userName && s.user_name === userName)
-    );
     
-    // デバッグ用ログ（本番環境では削除してください）
+    // 署名済み判定：厳密なuser_idまたはuser_nameの完全一致で判定
+    const mySignature = signatures.find(s => {
+      // バックエンドのuser_idがある場合は、これを最優先で使用
+      if (backendUserId && s.user_id) {
+        return s.user_id === backendUserId;
+      }
+      // user_idがない場合のみ、user_nameの完全一致で判定
+      if (userName && s.user_name) {
+        return s.user_name === userName;
+      }
+      return false;
+    });
+    
+    // デバッグ情報（開発環境のみ）
     if (process.env.NODE_ENV === 'development') {
-      console.log('SignatureTab - Debug Info:', {
+      console.log('自分の署名判定:', {
         userName,
         backendUserId,
-        signatures,
         mySignature,
-        foundByUserId: signatures.find(s => backendUserId && s.user_id === backendUserId),
-        foundByUserName: signatures.find(s => userName && s.user_name === userName)
+        allSignatures: signatures,
+        匹配方法: backendUserId ? 'user_id' : 'user_name',
+        検索対象: backendUserId || userName
       });
     }
 
       const handleSignatureComplete = async (method: 'text', value: string) => {
     if (!agreement || !backendUserId) return;
     try {
-      await signatureApi.createSignature({
+      const newSignature = await signatureApi.createSignature({
         agreement_id: agreement.id,
         user_id: backendUserId,
         method,
         value
       });
-      // 署名リストを再取得
+      
+      // デバッグ情報（開発環境のみ）
+      if (process.env.NODE_ENV === 'development') {
+        console.log('署名完了:', newSignature);
+      }
+      
+      // 署名リストを再取得（プロジェクト全員に署名状況が即座に反映される）
       const sigs = await signatureApi.getSignaturesByAgreement(agreement.id);
+      
+      // デバッグ情報（開発環境のみ）
+      if (process.env.NODE_ENV === 'development') {
+        console.log('更新された署名リスト:', sigs);
+      }
+      
       setSignatures(sigs);
-    } catch {
+    } catch (error) {
+      console.error('署名保存エラー:', error);
       alert('署名の保存に失敗しました');
     }
   };
@@ -1047,84 +1141,34 @@ export default function ProjectDetail() {
           <div>
             <h2 className="text-xl font-semibold">署名</h2>
             <p className="text-gray-600 text-sm">最終提案に基づいた協議書への電子署名</p>
+            <p className="text-blue-600 text-xs mt-1">※ 署名状況はプロジェクト全員にリアルタイムで公開されます</p>
           </div>
         </div>
 
-        {/* --- 協議書用紙風カード or 案内メッセージ --- */}
         {agreement && agreementContent ? (
-          <div className="max-w-2xl mx-auto bg-white shadow-2xl rounded-lg border-2 border-gray-300 p-8 relative mb-10">
-            <h2 className="text-2xl font-bold text-center mb-2 tracking-wide">{agreement.title || 'サンプルタイトル'}</h2>
-            <div className="text-center text-gray-500 mb-6">{agreement?.created_at ? new Date(agreement.created_at).toLocaleDateString() : new Date().toLocaleDateString()}　{project?.title}</div>
-            <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent}</div>
-            {/* ▼▼▼ 相続人ごとの署名状況 横並びリスト表示 ▼▼▼ */}
-            <div className="flex flex-col gap-4 mt-10">
-              {members.length === 0 ? (
-                <div className="text-gray-400 text-sm py-8 w-full text-center border rounded-lg bg-gray-50">
-                  相続人（メンバー）が登録されていません。
-                </div>
-              ) : (
-                members.map(member => {
-                  const sig = signatures.find(s => s.user_id === member.user_id);
-                  return (
-                    <div key={member.user_id} className="flex items-center gap-4 w-full">
-                      {/* 左端ラベル */}
-                      <span className="w-40 text-left text-base font-semibold text-gray-800">相続人</span>
-                      {/* 下線（サイン欄風）＋署名済みなら上にユーザー名 */}
-                      <span className="flex-1 relative h-6 flex items-center">
-                        {/* 署名済みなら下線の上に契約書風フォントでユーザー名 */}
-                        {sig && (
-                          <span
-                            className="absolute left-1/2 -translate-x-1/2 -top-1 font-serif font-bold text-lg text-gray-700 tracking-wider select-none leading-none p-0 m-0"
-                            style={{letterSpacing: '0.15em', lineHeight: 1, padding: 0, margin: 0}}>
-                            {member.name || member.user_name}
-                          </span>
-                        )}
-                        <span className="w-full border-b border-gray-300 h-6 block"></span>
-                      </span>
-                      {/* 署名状況（右端） */}
-                      <span className="flex items-center min-w-[120px] justify-end">
-                        {sig ? (
-                          <span className="flex items-center gap-2">
-                            <svg width="48" height="48" viewBox="0 0 48 48" aria-label="同意済み印鑑">
-                              <circle cx="24" cy="24" r="21" fill="#fff" stroke="#e11d48" strokeWidth="3.5" />
-                              <text x="24" y="29" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#e11d48" style={{fontFamily:'serif', letterSpacing: '0.1em'}}>同意</text>
-                            </svg>
-                            <span className="text-xs text-gray-500">{sig.signed_at ? new Date(sig.signed_at).toLocaleDateString() : ''}</span>
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-2 text-gray-400">
-                            <svg width="48" height="48" viewBox="0 0 48 48" className="opacity-60" aria-label="未同意印鑑">
-                              <circle cx="24" cy="24" r="21" fill="#fff" stroke="#bbb" strokeWidth="3.5" />
-                              <text x="24" y="29" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#bbb" style={{fontFamily:'serif', letterSpacing: '0.1em'}}>未</text>
-                            </svg>
-                            <span className="text-xs">署名待ち</span>
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <div className="flex gap-2 mt-8 justify-end">
-              {!isEditingAgreement && agreement && !signatures.find(s => s.user_name === 'テストユーザー') && (
-                <button className="px-3 py-1 bg-indigo-500 text-white rounded" onClick={() => setIsEditingAgreement(true)} disabled={agreementLoading}>編集</button>
-              )}
-              <button
-                className="px-3 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-                onClick={() => setShowAgreementPreview(true)}
-                disabled={!agreement}
-              >
-                協議書プレビュー
-              </button>
-            </div>
+          <>
+            <AgreementDocument
+              agreement={agreement}
+              agreementContent={agreementContent}
+              project={project}
+              members={members}
+              signatures={signatures}
+              isEditingAgreement={isEditingAgreement}
+              editingContent={editingContent}
+              agreementLoading={agreementLoading}
+              onEditToggle={() => setIsEditingAgreement(true)}
+              onPreviewToggle={() => setShowAgreementPreview(true)}
+              onContentChange={setEditingContent}
+              onSave={() => { setAgreementContent(editingContent); handleSaveAgreement(); }}
+              onCancel={() => { setIsEditingAgreement(false); setEditingContent(agreementContent); }}
+            />
             {showAgreementPreview && agreement && (
               <AgreementPreview
                 projectName={project?.title || ''}
                 projectDescription={project?.description || ''}
                 agreementTitle={agreement.title || ''}
                 agreementContent={agreementContent}
-                members={members.map(m => ({id: m.user_id.toString(), name: m.user_name, role: m.role}))}
+                members={members.map(m => ({id: m.user_id.toString(), name: m.name || m.user_name, role: m.role}))}
                 proposals={[]}
                 createdAt={agreement.created_at ? new Date(agreement.created_at) : new Date()}
                 signatures={signatures.map(s => ({
@@ -1136,23 +1180,7 @@ export default function ProjectDetail() {
                 onClose={() => setShowAgreementPreview(false)}
               />
             )}
-            {isEditingAgreement && (
-              <div className="mt-6">
-                <textarea
-                  className="w-full border rounded p-2 mb-2"
-                  rows={8}
-                  value={editingContent}
-                  onChange={e => setEditingContent(e.target.value)}
-                  placeholder="協議書の内容を入力してください"
-                  title="協議書内容"
-                />
-                <div className="flex gap-2">
-                  <button className="px-3 py-1 bg-indigo-600 text-white rounded" onClick={() => { setAgreementContent(editingContent); handleSaveAgreement(); }} disabled={agreementLoading}>保存</button>
-                  <button className="px-3 py-1 bg-gray-300 text-gray-700 rounded" onClick={() => { setIsEditingAgreement(false); setEditingContent(agreementContent); }}>キャンセル</button>
-                </div>
-              </div>
-            )}
-          </div>
+          </>
         ) : (
           <div className="max-w-2xl mx-auto bg-white shadow rounded-lg border-2 border-gray-200 p-12 text-center text-gray-500 text-lg my-12">
             協議書がまだ作成されていません。<br />
@@ -1184,7 +1212,7 @@ export default function ProjectDetail() {
           </svg>
           <div>
             <h2 className="text-xl font-semibold">提案</h2>
-            <p className="text-gray-600 text-sm">ニーズに合わせた最適な住まい案</p>
+            <p className="text-gray-600 text-sm">あなたが生成したAI提案一覧</p>
           </div>
         </div>
         <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
@@ -1224,6 +1252,19 @@ export default function ProjectDetail() {
           <span className="text-indigo-600 font-medium">お気に入り: {proposals.filter(p => p.is_favorite).length}件</span>
         </div>
       </div>
+      {/* 協議書作成中のローディング表示 */}
+      {creatingAgreement && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-center">
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-blue-700 font-medium">協議書を作成中...</span>
+          </div>
+        </div>
+      )}
+      
       {/* 提案カードグリッド */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {proposals.map((proposal) => (
@@ -1244,27 +1285,29 @@ export default function ProjectDetail() {
   const handleGenerateAiProposals = async () => {
     setIsAiProcessing(true);
     try {
-      // 論点・会話履歴を取得
-      const issuesData = await issueApi.getIssues(projectId);
+      // 論点・会話履歴を取得（ログインユーザーのもののみ）
+      const issuesData = await issueApi.getIssues(projectId, backendUserId || undefined);
       // AI生成API呼び出し（この時点でDB保存済み）
-      await generateProposals(projectId.toString(), issuesData);
-      // ここでDB保存APIは呼ばず、リストを再取得するだけ
-      const proposalsData = await proposalApi.getProposals(projectId);
-      const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
-        id: proposal.id.toString(),
-        title: proposal.title || '無題の提案',
-        description: proposal.content || '',
-        supportRate: proposal.support_rate || 0,
-        points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
-          id: pt.id ?? idx,
-          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
-          content: pt.content
-        })),
-        selected: proposal.is_selected || false,
-        is_favorite: Boolean(proposal.is_favorite),
-      }))
-      .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
-      setProposals(formattedProposals);
+      await generateProposals(projectId.toString(), issuesData, backendUserId || undefined);
+      // ここでDB保存APIは呼ばず、リストを再取得するだけ（ログインユーザーのもののみ）
+      if (backendUserId) {
+        const proposalsData = await proposalApi.getProposals(projectId, backendUserId);
+        const formattedProposals = (proposalsData as ApiProposal[]).map((proposal: ApiProposal) => ({
+          id: proposal.id.toString(),
+          title: proposal.title || '無題の提案',
+          description: proposal.content || '',
+          supportRate: proposal.support_rate || 0,
+          points: (proposal.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+            id: pt.id ?? idx,
+            type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+            content: pt.content
+          })),
+          selected: proposal.is_selected || false,
+          is_favorite: Boolean(proposal.is_favorite),
+        }))
+        .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+        setProposals(formattedProposals);
+      }
       setError(null);
     } catch {
       setError('AIによる提案生成に失敗しました');
@@ -1280,28 +1323,30 @@ export default function ProjectDetail() {
       content: proposal.description,
       support_rate: proposal.supportRate
     });
-    // 再取得してリスト更新
-    const proposalsData = await proposalApi.getProposals(projectId);
-    const formattedProposals = (proposalsData as ApiProposal[]).map((p: ApiProposal) => ({
-      id: p.id.toString(),
-      title: p.title || '無題の提案',
-      description: p.content || '',
-      supportRate: p.support_rate || 0,
-      points: (p.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
-        id: pt.id ?? idx,
-        type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
-        content: pt.content
-      })),
-      selected: p.is_selected || false,
-      is_favorite: Boolean(p.is_favorite),
-    }))
-    .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
-    setProposals(formattedProposals);
+    // 再取得してリスト更新（ログインユーザーのもののみ）
+    if (backendUserId) {
+      const proposalsData = await proposalApi.getProposals(projectId, backendUserId);
+      const formattedProposals = (proposalsData as ApiProposal[]).map((p: ApiProposal) => ({
+        id: p.id.toString(),
+        title: p.title || '無題の提案',
+        description: p.content || '',
+        supportRate: p.support_rate || 0,
+        points: (p.points || []).map((pt: { id?: number; type: string; content: string }, idx: number): ProposalPoint => ({
+          id: pt.id ?? idx,
+          type: pt.type as 'merit' | 'demerit' | 'cost' | 'effort',
+          content: pt.content
+        })),
+        selected: p.is_selected || false,
+        is_favorite: Boolean(p.is_favorite),
+      }))
+      .sort((a: Proposal, b: Proposal) => Number(b.id) - Number(a.id));
+      setProposals(formattedProposals);
+    }
   };
 
   // 協議書作成ボタン押下時のハンドラ
   const handleSelectForAgreement = async (proposal: Proposal) => {
-    setAgreementLoading(true);
+    setCreatingAgreement(true);
     setError(null);
     try {
       // AIで協議書を生成しDB保存
@@ -1314,7 +1359,7 @@ export default function ProjectDetail() {
     } catch {
       setError('協議書の生成に失敗しました');
     } finally {
-      setAgreementLoading(false);
+      setCreatingAgreement(false);
     }
   };
 

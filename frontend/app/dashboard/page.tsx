@@ -75,7 +75,7 @@ export default function Dashboard() {
           
           <div className="mb-8">
             <div className="bg-white rounded-lg shadow p-6 mb-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">あなたの相続プロジェクト</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">あなたのプロジェクト</h2>
               {projects.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-gray-500 mb-4">まだプロジェクトがありません</p>

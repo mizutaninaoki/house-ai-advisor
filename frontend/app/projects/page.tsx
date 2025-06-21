@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import ProjectList from '../components/ProjectList';
-import { userApi } from '../utils/api';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { useAuth } from '../auth/AuthContext';
@@ -11,37 +10,16 @@ import ProtectedRoute from '../auth/ProtectedRoute';
 export default function ProjectsPage() {
   const [userId, setUserId] = useState<number | undefined>(undefined);
   const [pageLoading, setPageLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, backendUserId } = useAuth();
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        if (!user) {
-          console.log('ユーザー情報がありません');
-          setPageLoading(false);
-          return;
-        }
-        
-        console.log('認証済みユーザー:', user.email);
-        
-        // Firebase認証済みユーザーからバックエンドユーザーを取得
-        const backendUser = await userApi.getOrCreateFromFirebase({
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || undefined
-        });
-        
-        console.log('バックエンドユーザー情報:', backendUser);
-        setUserId(backendUser.id);
-      } catch (error) {
-        console.error('ユーザー情報の取得に失敗しました:', error);
-      } finally {
-        setPageLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, [user]);
+    if (backendUserId) {
+      setUserId(backendUserId);
+      setPageLoading(false);
+    } else if (!user) {
+      setPageLoading(false);
+    }
+  }, [user, backendUserId]);
 
   // プロジェクト一覧のコンテンツをレンダリング
   const renderProjectsContent = () => {
