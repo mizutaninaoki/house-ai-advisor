@@ -1,5 +1,6 @@
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useEffect } from 'react';
+import SignatureStatus from './SignatureStatus';
 
 interface AgreementPreviewProps {
   projectName: string;
@@ -14,12 +15,9 @@ interface AgreementPreviewProps {
 }
 
 export default function AgreementPreview({
-  projectName,
-  projectDescription,
   agreementTitle,
   agreementContent,
   members,
-  proposals,
   createdAt,
   signatures,
   onClose
@@ -37,15 +35,6 @@ export default function AgreementPreview({
       window.removeEventListener('keydown', handleEsc);
     };
   }, [onClose]);
-  
-  // 採用された提案を取得（最も支持率の高い提案）
-  const adoptedProposal = proposals.length > 0 
-    ? proposals.reduce((prev, current) => 
-        prev.supportRate > current.supportRate ? prev : current)
-    : null;
-  
-  // 印鑑スタイルのCSSクラス
-  const stampStyle = "border-4 border-red-600 text-red-600 font-bold py-2 px-4 rounded-full transform rotate-12 inline-block text-center";
   
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -68,6 +57,13 @@ export default function AgreementPreview({
           </div>
           
           <div className="font-serif text-lg leading-relaxed mb-8 whitespace-pre-line min-h-[180px]">{agreementContent}</div>
+          
+          <SignatureStatus 
+            members={members}
+            signatures={signatures}
+            isPreview={true}
+            showTitle={true}
+          />
         </div>
         
         <div className="flex justify-end p-4 border-t border-gray-200">

@@ -93,6 +93,13 @@ alembic upgrade head  # マイグレーション適用
 pipenv run dev        # 開発サーバー起動
 ```
 
+#### メール送信の動作切替
+バックエンドでは `.env` 内の `EMAIL_BACKEND` によってメール送信方法を切り替えられます:
+- `EMAIL_BACKEND=smtp` の場合
+  - ローカル開発用SMTPモードとなり、Mailhogを利用して `http://localhost:8025` で送信メールを確認できます。
+- `EMAIL_BACKEND=resend` の場合
+  - Resend API経由で実際のメールを送信します。事前に `RESEND_API_KEY` を `.env` に設定してください。
+
 ### フロントエンド
 ```bash
 cd frontend
@@ -101,9 +108,19 @@ npm run dev
 ```
 
 ## APIエンドポイント
+バックエンドでは以下の主要なAPIエンドポイントを提供しています（ローカル: http://localhost:8000 / 本番: https://house-ai-advisor.com）:
 
-バックエンドは以下の主要なAPIエンドポイントを提供します：
+- GET /health : ヘルスチェック
+- POST /api/projects : プロジェクト作成（招待メール送信）
+- GET /api/projects/{project_id} : プロジェクト取得
+- POST /api/invitations/accept/{token} : 招待受諾
+- POST /api/invitations/complete/{token} : 招待完了
 
+## Production
+本番環境では以下のドメインでサービスを公開しています:
+- https://house-ai-advisor.com/
+
+### リソース一覧
 - `/api/speech` - 音声処理関連
 - `/api/analysis` - 感情分析、論点抽出関連
 - `/api/proposals` - AI提案生成関連

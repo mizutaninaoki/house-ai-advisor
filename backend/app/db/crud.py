@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.db import models, schemas
 from typing import List, Optional
+from sqlalchemy import or_
 
 # ユーザー関連CRUD
 def get_user(db: Session, user_id: int):
@@ -35,6 +36,18 @@ def get_projects(db: Session, user_id: Optional[int] = None, skip: int = 0, limi
         query = query.filter(models.Project.user_id == user_id)
     return query.offset(skip).limit(limit).all()
 
+def get_projects_for_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    """ユーザーが作成したプロジェクト＋参加しているプロジェクトを取得"""
+    subquery = db.query(models.ProjectMember.project_id).filter(models.ProjectMember.user_id == user_id).subquery()
+    query = db.query(models.Project).filter(
+        or_(
+            models.Project.user_id == user_id,  # 作成したプロジェクト
+            models.Project.id.in_(subquery)     # 参加しているプロジェクト
+        )
+    )
+
+    return query.offset(skip).limit(limit).all()
+
 def create_project(db: Session, project: schemas.ProjectCreate):
     # membersを除外してdict化
     project_data = project.dict(exclude={"members"})
@@ -65,16 +78,26 @@ def delete_project(db: Session, project_id: int):
 def get_conversation(db: Session, conversation_id: int):
     return db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
 
-def get_conversations(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+def get_conversations(db: Session, project_id: Optional[int] = None, user_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    # プライバシー保護: user_idが指定されていない場合は空の結果を返す
+    if user_id is None:
+        return []
+    
     query = db.query(models.Conversation)
     if project_id:
         query = query.filter(models.Conversation.project_id == project_id)
+    query = query.filter(models.Conversation.user_id == user_id)
     return query.offset(skip).limit(limit).all()
 
-def get_conversations_ordered_by_timestamp(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+def get_conversations_ordered_by_timestamp(db: Session, project_id: Optional[int] = None, user_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    # プライバシー保護: user_idが指定されていない場合は空の結果を返す
+    if user_id is None:
+        return []
+    
     query = db.query(models.Conversation)
     if project_id:
         query = query.filter(models.Conversation.project_id == project_id)
+    query = query.filter(models.Conversation.user_id == user_id)
     # タイムスタンプ（created_at）の昇順でソート
     return query.order_by(models.Conversation.created_at).offset(skip).limit(limit).all()
 
@@ -112,10 +135,15 @@ def update_analysis(db: Session, analysis_id: int, analysis_data: schemas.Analys
 def get_proposal(db: Session, proposal_id: int):
     return db.query(models.Proposal).filter(models.Proposal.id == proposal_id).first()
 
-def get_proposals(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+def get_proposals(db: Session, project_id: Optional[int] = None, user_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    # プライバシー保護: user_idが指定されていない場合は空の結果を返す
+    if user_id is None:
+        return []
+
     query = db.query(models.Proposal)
     if project_id:
         query = query.filter(models.Proposal.project_id == project_id)
+    query = query.filter(models.Proposal.user_id == user_id)
     return query.offset(skip).limit(limit).all()
 
 def create_proposal(db: Session, proposal: schemas.ProposalCreate):
@@ -146,15 +174,21 @@ def delete_proposal(db: Session, proposal_id: int):
 def get_issue(db: Session, issue_id: int):
     return db.query(models.Issue).filter(models.Issue.id == issue_id).first()
 
-def get_issues(db: Session, project_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+def get_issues(db: Session, project_id: Optional[int] = None, user_id: Optional[int] = None, skip: int = 0, limit: int = 100):
+    # プライバシー保護: user_idが指定されていない場合は空の結果を返す
+    if user_id is None:
+        return []
+    
     query = db.query(models.Issue)
     if project_id:
         query = query.filter(models.Issue.project_id == project_id)
+    query = query.filter(models.Issue.user_id == user_id)
     return query.offset(skip).limit(limit).all()
 
 def create_issue(db: Session, issue: schemas.IssueCreate):
     db_issue = models.Issue(
         project_id=issue.project_id,
+        user_id=issue.user_id,
         topic=getattr(issue, 'topic', None),
         content=issue.content,
         type=issue.type,
@@ -172,6 +206,7 @@ def create_issues_batch(db: Session, issues: List[schemas.IssueCreate]):
     for issue in issues:
         db_issue = models.Issue(
             project_id=issue.project_id,
+            user_id=issue.user_id,
             topic=getattr(issue, 'topic', None),
             content=issue.content,
             type=issue.type,
@@ -194,19 +229,15 @@ def update_issue(db: Session, issue_id: int, issue_data: schemas.IssueBase):
         db.refresh(db_issue)
     return db_issue
 
-def delete_issue(db: Session, issue_id: int):
-    db_issue = get_issue(db, issue_id)
-    if db_issue:
-        db.delete(db_issue)
-        db.commit()
-        return True
-    return False
-
-def delete_project_issues(db: Session, project_id: int):
-    """プロジェクトに関連するすべての論点を削除"""
-    issues = get_issues(db, project_id=project_id)
-    for issue in issues:
-        db.delete(issue)
+def delete_project_issues(db: Session, project_id: int, user_id: Optional[int] = None):
+    """プロジェクトに関連するすべての論点を削除（オプションでユーザー単位）"""
+    # プロジェクトの論点を対象に削除クエリを作成
+    query = db.query(models.Issue).filter(models.Issue.project_id == project_id)
+    # ユーザーIDが指定されていればフィルタを追加
+    if user_id is not None:
+        query = query.filter(models.Issue.user_id == user_id)
+    # バルク削除
+    query.delete(synchronize_session=False)
     db.commit()
     return True
 
@@ -312,7 +343,7 @@ def create_project_member(db: Session, member: schemas.ProjectMemberCreate):
     db.refresh(db_member)
     return db_member
 
-def get_estates(db: Session, project_id: int = None):
+def get_estates(db: Session, project_id: Optional[int] = None):
     query = db.query(models.Estate)
     if project_id:
         query = query.filter(models.Estate.project_id == project_id)
