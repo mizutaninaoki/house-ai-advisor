@@ -6,7 +6,7 @@ from enum import Enum
 # ベースモデル
 class BaseSchema(BaseModel):
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # ユーザースキーマ
 class UserBase(BaseSchema):
@@ -17,9 +17,10 @@ class UserBase(BaseSchema):
 class UserCreate(UserBase):
     hashed_password: Optional[str] = None
 
-# 追加: relation を持つ UserCreate
+# 追加: relation と role を持つ UserCreate
 class UserWithRelationCreate(UserBase):
     relation: Optional[str] = None
+    role: Optional[str] = "member"
 
 class User(UserBase):
     id: int
@@ -57,6 +58,7 @@ class ProjectDetail(Project):
 # 会話スキーマ
 class ConversationBase(BaseSchema):
     project_id: int
+    user_id: Optional[int] = None
     content: Optional[str] = None
     speaker: Optional[str] = None
     sentiment: Optional[str] = None  # 感情分析結果（positive, neutral, negative）
@@ -82,11 +84,13 @@ class MessageBase(BaseSchema):
 
 class MessageCreate(MessageBase):
     project_id: int
-    
+    user_id: Optional[int] = None
+
 class Message(MessageBase):
     id: int
+    user_id: Optional[int] = None
     timestamp: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -116,10 +120,11 @@ class ProposalBase(BaseSchema):
     support_rate: float = 0.0
 
 class ProposalCreate(ProposalBase):
-    pass
+    user_id: Optional[int] = None
 
 class Proposal(ProposalBase):
     id: int
+    user_id: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -151,15 +156,16 @@ class IssueBase(BaseModel):
 
 class IssueCreate(IssueBase):
     project_id: int
+    user_id: Optional[int] = None
 
 class Issue(IssueBase):
     id: int
     project_id: int
+    user_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 # 提案ポイント（メリット・デメリット等）スキーマ
@@ -232,6 +238,7 @@ class ProjectMemberBase(BaseSchema):
     role: str = "member"
     relation: Optional[str] = None  # 続柄
     name: Optional[str] = None  # 氏名
+    email: Optional[str] = None  # メールアドレス
 
 class ProjectMemberCreate(ProjectMemberBase):
     pass
@@ -261,4 +268,35 @@ class Estate(EstateBase):
     updated_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True 
+        from_attributes = True 
+
+# プロジェクト招待スキーマ
+class ProjectInvitationBase(BaseSchema):
+    project_id: int
+    email: str
+    name: str
+    relation: str
+    role: str = "member"
+
+class ProjectInvitationCreate(ProjectInvitationBase):
+    expires_hours: int = 72
+
+class ProjectInvitation(ProjectInvitationBase):
+    id: int
+    token: str
+    is_used: bool
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class InvitationAcceptResponse(BaseSchema):
+    project_id: int
+    project_title: str
+    invitee_email: str
+    invitee_name: str
+    relation: str
+    token: str 

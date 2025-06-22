@@ -64,6 +64,7 @@ class Conversation(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # 発言者または対象ユーザー
     content = Column(Text, nullable=False)
     speaker = Column(String, nullable=True)  # 話者情報（ユーザー or AI）
     sentiment = Column(String, nullable=True)  # 感情分析結果
@@ -71,6 +72,7 @@ class Conversation(Base):
     
     # リレーションシップ
     project = relationship("Project", back_populates="conversations")
+    user = relationship("User")
     analysis = relationship("Analysis", back_populates="conversation", uselist=False)
 
 # 分析結果モデル
@@ -92,6 +94,7 @@ class Proposal(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # 提案作成者
     title = Column(String)
     content = Column(Text)
     support_rate = Column(Float, default=0.0)  # 支持率
@@ -102,6 +105,7 @@ class Proposal(Base):
     
     # リレーションシップ
     project = relationship("Project", back_populates="proposals")
+    user = relationship("User")
     points = relationship("ProposalPoint", back_populates="proposal", cascade="all, delete-orphan")
 
 # 提案ポイント（メリット・デメリット等）モデル
@@ -123,6 +127,7 @@ class Issue(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # 論点作成者
     topic = Column(String, nullable=True)  # 論点の見出し
     content = Column(Text, nullable=False)
     type = Column(Enum(IssueType), nullable=False)  # type: ignore
@@ -133,6 +138,7 @@ class Issue(Base):
 
     # リレーションシップ
     project = relationship("Project", back_populates="issues")
+    user = relationship("User")
     
     # 関連メッセージIDは別テーブルで管理するか、JSON形式で保存することも検討できます
 
@@ -178,6 +184,7 @@ class ProjectMember(Base):
     role = Column(String, default="member")  # 役割: owner/member など
     relation = Column(String)  # 続柄
     name = Column(String, nullable=True)  # 氏名
+    email = Column(String, nullable=True)  # メールアドレス
 
 # 不動産モデル
 class Estate(Base):
@@ -193,3 +200,22 @@ class Estate(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     project = relationship("Project", back_populates="estates")
+
+# プロジェクト招待モデル
+class ProjectInvitation(Base):
+    __tablename__ = "project_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    email = Column(String, nullable=False)
+    token = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=True)
+    relation = Column(String, nullable=True)
+    role = Column(String, default="member")
+    is_used = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project")

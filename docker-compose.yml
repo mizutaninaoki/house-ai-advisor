@@ -47,5 +47,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"  # SMTPポート番号
+      - "8025:8025"  # Web UIポート番号
+    restart: unless-stopped
+
 volumes:
   postgres_data:
