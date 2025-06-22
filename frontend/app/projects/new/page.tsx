@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
-import { EstateData } from '@/app/components/EstateRegistrationForm';
 import { projectApi } from '@/app/utils/api';
 import { useAuth } from '@/app/auth/AuthContext';
 
@@ -18,13 +17,23 @@ interface Heir {
   email: string;
 }
 
-// ProjectMember型（user_idを含む場合も許容）
+// ProjectMember型（user_idとroleを含む場合も許容）
 type ProjectMemberInput = {
   email: string;
   name: string;
   relation: string;
   user_id?: number;
+  role?: string;
 };
+
+// 不動産登録フォーム用データ型
+interface EstateData {
+  id: string;
+  name: string;
+  address: string;
+  propertyTaxValue?: number;
+  type: string;
+}
 
 export default function NewProject() {
   const { user, backendUserId } = useAuth();
@@ -41,6 +50,10 @@ export default function NewProject() {
   const [heirs, setHeirs] = useState<Heir[]>([
     { id: Date.now().toString(), name: '', relation: '', email: '' }
   ]);
+
+  // メールアドレス形式チェック用
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isValidEmail = (email: string) => emailRegex.test(email);
 
   // 金融資産（円）
   const [financialAsset, setFinancialAsset] = useState<number | undefined>(undefined);
@@ -104,12 +117,14 @@ export default function NewProject() {
             user_id: backendUserId,
             email: user.email || '',
             name: user.displayName || '',
-            relation: '本人'
+            relation: '本人',
+            role: 'owner'
           },
           ...heirs.map(h => ({
             email: h.email,
             name: h.name,
-            relation: h.relation
+            relation: h.relation,
+            role: 'member'
           }))
         ] as ProjectMemberInput[]
       };
@@ -184,7 +199,7 @@ export default function NewProject() {
       <main className="flex-grow container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-800">新しい相続プロジェクトを作成</h1>
+            <h1 className="text-2xl font-bold text-gray-800">新しいプロジェクトを作成</h1>
             <Link 
               href="/dashboard" 
               className="flex items-center text-cyan-600 hover:text-cyan-800"
@@ -502,9 +517,15 @@ export default function NewProject() {
                   </button>
                   <button
                     type="button"
-                    className={`bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors ${(heirs.some(h => !h.name.trim() || !h.relation.trim() || !h.email.trim())) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    onClick={() => { if (heirs.every(h => h.name.trim() && h.relation.trim() && h.email.trim())) setStep(4); }}
-                    disabled={heirs.some(h => !h.name.trim() || !h.relation.trim() || !h.email.trim())}
+                    className={`bg-cyan-600 text-white py-2 px-4 rounded-md hover:bg-cyan-700 transition-colors ${(heirs.some(h => !h.name.trim() || !h.relation.trim() || !isValidEmail(h.email))) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={() => {
+                      if (heirs.every(h => h.name.trim() && h.relation.trim() && isValidEmail(h.email))) {
+                        setStep(4);
+                      } else {
+                        setFormError('有効なメールアドレスを入力してください');
+                      }
+                    }}
+                    disabled={heirs.some(h => !h.name.trim() || !h.relation.trim() || !isValidEmail(h.email))}
                   >
                     次へ
                   </button>
@@ -515,7 +536,7 @@ export default function NewProject() {
             {step === 4 && (
               <div>
                 <h2 className="text-xl font-semibold text-gray-800 mb-4">プロジェクト内容の確認</h2>
-                <p className="text-gray-600 mb-6">下記の内容で新しい相続プロジェクトを作成します。内容に誤りがないかご確認のうえ、「プロジェクトを作成」ボタンを押してください。</p>
+                <p className="text-gray-600 mb-6">下記の内容で新しいプロジェクトを作成します。内容に誤りがないかご確認のうえ、「プロジェクトを作成」ボタンを押してください。</p>
                 <div className="bg-gray-50 p-4 rounded-md mb-6">
                   <h3 className="font-medium text-gray-700 mb-2">登録内容</h3>
                   <div className="space-y-2">

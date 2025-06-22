@@ -45,7 +45,7 @@ class ComparisonRequest(BaseModel):
     criteria: Optional[List[str]] = None
 
 @router.post("/ai/generate", summary="論点に基づいた提案生成", tags=["AI Proposals"])
-async def generate_proposals(request: ProposalRequest, db: Session = Depends(get_db)):
+async def generate_proposals(request: ProposalRequest, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     """
     抽出された論点に基づいて遺産分割の提案を生成します。
     
@@ -153,7 +153,8 @@ async def generate_proposals(request: ProposalRequest, db: Session = Depends(get
                         title=p["title"],
                         content=p["description"],
                         is_favorite=False,
-                        support_rate=p.get("support_rate", 0.0)
+                        support_rate=p.get("support_rate", 0.0),
+                        user_id=user_id  # 提案を生成したユーザーのIDを設定
                     ))
                     # ポイントも保存
                     for point in p.get("points", []):
@@ -269,9 +270,9 @@ def create_proposal(proposal: schemas.ProposalCreate, db: Session = Depends(get_
     return crud.create_proposal(db=db, proposal=proposal)
 
 @router.get("/", response_model=List[schemas.Proposal], tags=["DB Proposals"])
-def read_proposals(project_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """提案一覧を取得する（プロジェクトIDによるフィルタリング可能）"""
-    proposals = crud.get_proposals(db, project_id=project_id, skip=skip, limit=limit)
+def read_proposals(project_id: Optional[int] = None, user_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """提案一覧を取得する（プロジェクトIDとユーザーIDによるフィルタリング可能）"""
+    proposals = crud.get_proposals(db, project_id=project_id, user_id=user_id, skip=skip, limit=limit)
     return proposals
 
 @router.get("/{proposal_id}", response_model=schemas.Proposal, tags=["DB Proposals"])
