@@ -26,18 +26,22 @@ try {
   storage = getStorage(app);
 } catch (error) {
   console.warn('Firebase初期化エラー:', error);
-  // 開発用のモックオブジェクト
-  app = null;
-  db = {} as any;
-  auth = {
-    onAuthStateChanged: (_: any, callback: any) => {
-      callback(null);
-      return () => {};
-    },
-    signInWithPopup: async () => ({ user: { uid: 'mock-uid', email: 'test@example.com', displayName: 'テストユーザー' } }),
-    signOut: async () => {}
-  } as Auth;
-  storage = {} as any;
+  if (process.env.NODE_ENV === 'development') {
+    // 開発用のモックオブジェクト
+    app = null;
+    db = {} as any;
+    auth = {
+      onAuthStateChanged: (_: any, callback: any) => {
+        callback(null);
+        return () => {};
+      },
+      signInWithPopup: async () => ({ user: { uid: 'mock-uid', email: 'test@example.com', displayName: 'テストユーザー' } }),
+      signOut: async () => {}
+    } as unknown as Auth;
+    storage = {} as any;
+  } else {
+    throw error;
+  }
 }
 
 export { app, db, auth, storage }; 

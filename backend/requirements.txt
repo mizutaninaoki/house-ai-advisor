@@ -6,8 +6,10 @@ httpx==0.25.1
 python-dotenv==1.0.0 
 sqlalchemy==2.0.23
 alembic==1.12.1
-psycopg2-binary==2.9.9
+# psycopg2-binaryは、 google.cloud.sql.connector で psycopg2 ドライバがサポートされていないためpg8000に変更
+pg8000==1.30.5
 google-cloud-speech==2.23.0
 google-generativeai==0.3.2
+cloud-sql-python-connector[pg8000]==1.6.0
 pydantic-settings==2.0.3
 resend==2.10.0
