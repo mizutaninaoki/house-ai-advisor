@@ -1,6 +1,5 @@
 .env
 .env.local
 .env.development
+.env.production
 
-# firebaseのキーがないとdockerのビルドができないため、あえて入れるようにしている
-# .env.production
