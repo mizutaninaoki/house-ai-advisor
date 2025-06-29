@@ -37,6 +37,7 @@ try {
   console.warn('Firebase初期化エラー:', error);
   if (!isProduction || isBuild) {
     // 開発用やビルド時のモックオブジェクト
+
     app = null;
     db = {} as any;
     auth = {

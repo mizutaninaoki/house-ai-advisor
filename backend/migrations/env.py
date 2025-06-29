@@ -20,6 +20,7 @@ config = context.config
 # get_database_url()でDB URLを取得し、sqlalchemy.urlにセット
 # これにより、.envや環境変数の値が反映される
 
+
 db_url = get_database_url()
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)

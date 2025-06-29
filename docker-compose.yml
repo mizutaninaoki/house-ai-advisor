@@ -16,6 +16,7 @@ services:
       - CORS_ALLOW_ORIGINS=http://localhost:3000
       - SMTP_HOST=mailhog
       - SMTP_PORT=1025
+
     restart: unless-stopped
     depends_on:
       - db
