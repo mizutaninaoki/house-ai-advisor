@@ -67,3 +67,17 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_database_url():
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_USER = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+    DB_NAME = os.getenv("DB_NAME", "houseai")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    # Unixソケットの場合
+    if DB_HOST.startswith("/"):
+        # pg8000用: unix_sockパラメータでソケットファイルを指定
+        return f"postgresql+pg8000://{DB_USER}:{DB_PASSWORD}@/{DB_NAME}?unix_sock={DB_HOST}/.s.PGSQL.{DB_PORT}"
+    else:
+        return f"postgresql+pg8000://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    
