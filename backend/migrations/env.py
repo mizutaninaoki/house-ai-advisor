@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 
 from alembic import context
 
+# get_database_urlをインポート
+from app.db.session import get_database_url
+from app.db.models import Base
+
 # 環境変数の読み込み
 load_dotenv()
 
@@ -13,15 +17,15 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 
-# データベースURLを環境変数から設定
-DB_HOST = os.getenv("DB_HOST", "localhost")  # デフォルトをlocalhostに変更
-DB_PORT = os.getenv("DB_PORT", "5433")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-DB_NAME = os.getenv("DB_NAME", "houseai")
+# get_database_url()でDB URLを取得し、sqlalchemy.urlにセット
+# これにより、.envや環境変数の値が反映される
 
-db_url = f"postgresql+pg8000://{DB_USER}:{DB_PASSWORD}@/{DB_NAME}?host={DB_HOST}"
-config.set_main_option("sqlalchemy.url", db_url)
+
+db_url = get_database_url()
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
+else:
+    raise ValueError("データベース接続URLが設定されていません。環境変数を確認してください。")
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -32,7 +36,6 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from app.db.models import Base
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

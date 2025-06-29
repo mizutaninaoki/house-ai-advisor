@@ -11,10 +11,6 @@ RUN npm ci
 # ソースコードをコピー
 COPY . .
 
-# 本番用の環境変数ファイルをコピー
-# firebaseのキーがないとdockerのビルドができないため、あえて入れるようにしている
-COPY .env.production .env
-
 # 本番環境で実行するためにビルド
 RUN npm run build
 

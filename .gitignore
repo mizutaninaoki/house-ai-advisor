@@ -282,3 +282,5 @@ gcp-service-account-house-ai-advisor.json
 backend/uvicorn_log.txt
 
 .cursor/rules/**
+
+docs/*
