@@ -20,13 +20,14 @@ class ExtractIssuesRequest(BaseModel):
 
 @router.get("/", response_model=List[schemas.Issue])
 def read_issues(
-    project_id: Optional[int] = None, 
+    project_id: Optional[int] = None,
+    user_id: Optional[int] = None,
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(get_db)
 ):
-    """論点一覧を取得する（プロジェクトIDによるフィルタリング可能）"""
-    issues = crud.get_issues(db, project_id=project_id, skip=skip, limit=limit)
+    """論点一覧を取得する（プロジェクトIDとユーザーIDによるフィルタリング可能）"""
+    issues = crud.get_issues(db, project_id=project_id, user_id=user_id, skip=skip, limit=limit)
     return issues
 
 @router.get("/{issue_id}", response_model=schemas.Issue)
@@ -65,7 +66,7 @@ def create_issues_batch(issues_data: IssuesBatchCreate, db: Session = Depends(ge
     return created_issues
 
 @router.post("/extract", response_model=Dict[str, Any])
-async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(get_db)):
+async def extract_issues(request: ExtractIssuesRequest, user_id: Optional[int] = None, db: Session = Depends(get_db)):
     """会話から論点を抽出して保存する"""
     # プロジェクトの存在確認
     db_project = crud.get_project(db, project_id=request.project_id)
@@ -73,10 +74,10 @@ async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="プロジェクトが見つかりません")
     
     # 既存の論点を削除（新しく抽出したものに置き換える）
-    crud.delete_project_issues(db, project_id=request.project_id)
+    crud.delete_project_issues(db, project_id=request.project_id, user_id=user_id)
     
     # 会話データを取得
-    conversations = crud.get_conversations_ordered_by_timestamp(db, project_id=request.project_id)
+    conversations = crud.get_conversations_ordered_by_timestamp(db, project_id=request.project_id, user_id=user_id)
     
     # 会話データがない場合
     if not conversations:
@@ -90,6 +91,7 @@ async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(ge
     for issue in extracted_issues:
         issue_create = schemas.IssueCreate(
             project_id=request.project_id,
+            user_id=user_id,  # ユーザーIDを設定
             topic=issue.get("topic"),
             content=issue.get("content"),
             type=issue["type"],
@@ -100,6 +102,7 @@ async def extract_issues(request: ExtractIssuesRequest, db: Session = Depends(ge
         issue_schema = schemas.Issue(
             id=db_issue.id,
             project_id=db_issue.project_id,
+            user_id=db_issue.user_id,
             topic=db_issue.topic,
             content=db_issue.content,
             type=db_issue.type,
