@@ -4,6 +4,8 @@ import re
 from collections import Counter
 import os
 import google.generativeai as genai
+from app.db import crud  # 追加
+from sqlalchemy.orm import Session  # 追加
 
 # Google Generative AIの初期化
 def initialize_google_ai():
@@ -14,7 +16,7 @@ def initialize_google_ai():
         print("警告: GEMINI_API_KEYが設定されていません。")
 
 # LLMによる論点生成関数
-async def generate_issue_content_with_llm(topic: str, topic_sentences: List[str], main_keyword: str, issue_type: str, agreement_level: str) -> Dict[str, str]:
+async def generate_issue_content_with_llm(topic: str, topic_sentences: List[str], main_keyword: str, issue_type: str, agreement_level: str, db: Session = None, project_id: int = None) -> Dict[str, str]:
     """
     LLMを使用して論点の内容を生成する
 
@@ -24,6 +26,8 @@ async def generate_issue_content_with_llm(topic: str, topic_sentences: List[str]
         main_keyword: 主要キーワード
         issue_type: 論点タイプ（positive, negative, neutral, requirement）
         agreement_level: 合意レベル（high, medium, low）
+        db: データベースセッション
+        project_id: プロジェクトID
 
     Returns:
         Dict[str, str]: topic（見出し）とcontent（詳細説明）を含む辞書
@@ -49,25 +53,31 @@ async def generate_issue_content_with_llm(topic: str, topic_sentences: List[str]
         # 会話の要約を作成
         conversation_summary = " ".join(topic_sentences[:10])  # 会話の一部を使用
         
+        # 参考情報
+        project_summary = ""
+        if db is not None and project_id is not None:
+            project_summary = build_project_summary_for_prompt(db, project_id)
+        
         # プロンプト作成
         prompt = f"""
-        あなたは相続や実家の処分などについての家族間の話し合いを支援するAIアシスタントです。
-        以下の情報から、論点の「見出し」と「詳細説明」を生成してください。
+{project_summary}
+あなたは相続や実家の処分などについての家族間の話し合いを支援するAIアシスタントです。
+以下の情報から、論点の「見出し」と「詳細説明」を生成してください。
 
-        【トピック】: {topic}
-        【キーワード】: {main_keyword}
-        【意見の傾向】: {issue_type_ja}
-        【合意度】: {agreement_level_ja}
-        
-        【関連する会話】:
-        {conversation_summary}
-        
-        以下の形式で出力してください：
-        見出し：（簡潔で具体的な論点のタイトル）
-        詳細：（この論点の詳細。なぜ議論が必要か、どのような意見の対立や合意があるか、今後どうすれば合意形成できるかなどを含める。150文字程度で簡潔にまとめてください）
-        
-        特に詳細部分では、合意形成のために何を話し合うべきかを明確にしてください。
-        """
+【トピック】: {topic}
+【キーワード】: {main_keyword}
+【意見の傾向】: {issue_type_ja}
+【合意度】: {agreement_level_ja}
+
+【関連する会話】:
+{conversation_summary}
+
+以下の形式で出力してください：
+見出し：（簡潔で具体的な論点のタイトル）
+詳細：（この論点の詳細。なぜ議論が必要か、どのような意見の対立や合意があるか、今後どうすれば合意形成できるかなどを含める。150文字程度で簡潔にまとめてください）
+
+特に詳細部分では、合意形成のために何を話し合うべきかを明確にしてください。
+"""
         
         # Google Generative AIを使用
         model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
@@ -115,12 +125,14 @@ def issue_type_text(issue_type: str) -> str:
         return "議論"
 
 # 論点抽出関数
-async def extract_issues_from_conversations(conversations: List[Any]) -> List[Dict[str, Any]]:
+async def extract_issues_from_conversations(conversations: List[Any], db: Session = None, project_id: int = None) -> List[Dict[str, Any]]:
     """
     会話データから論点を抽出し、合意度を計算する
     
     Args:
         conversations: 会話データのリスト
+        db: データベースセッション
+        project_id: プロジェクトID
         
     Returns:
         抽出された論点のリスト
@@ -237,7 +249,9 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
                 topic_sentences=topic_sentences_all, 
                 main_keyword=str(main_keyword),
                 issue_type=issue_type,
-                agreement_level=agreement_level
+                agreement_level=agreement_level,
+                db=db,
+                project_id=project_id
             )
             
             # 論点を追加
@@ -267,7 +281,9 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
             topic_sentences=["家族間での話し合いと譲り合いが重要です", "話し合いで解決しましょう"], 
             main_keyword="話し合い",
             issue_type="positive",
-            agreement_level="high"
+            agreement_level="high",
+            db=db,
+            project_id=project_id
         )
         
         extracted_issues.append({
@@ -286,7 +302,9 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
             topic_sentences=["相続での争いを避けたい", "揉め事は避けたい"], 
             main_keyword="争い",
             issue_type="requirement",
-            agreement_level="high"
+            agreement_level="high",
+            db=db,
+            project_id=project_id
         )
         
         extracted_issues.append({
@@ -334,18 +352,24 @@ async def extract_issues_from_conversations(conversations: List[Any]) -> List[Di
     
     return extracted_issues
 
-def generate_agreement_content_with_llm(project_title: str, proposal_content: str) -> dict:
+def generate_agreement_content_with_llm(project_title: str, proposal_content: str, db: Session = None, project_id: int = None) -> dict:
     """
     Gemini LLMを使って協議書タイトルと本文を生成する
     Args:
         project_title: プロジェクト（相続案件）のタイトル
         proposal_content: 提案内容（本文）
+        db: データベースセッション
+        project_id: プロジェクトID
     Returns:
         dict: {"title": タイトル, "content": 本文}
     """
     try:
         initialize_google_ai()
+        project_summary = ""
+        if db is not None and project_id is not None:
+            project_summary = build_project_summary_for_prompt(db, project_id)
         prompt = f"""
+{project_summary}
 あなたは遺産分割協議書の作成を支援するAIです。
 以下のプロジェクトタイトルと提案内容をもとに、正式な日本語の遺産分割協議書の本文を作成してください。
 
@@ -385,3 +409,97 @@ def generate_agreement_content_with_llm(project_title: str, proposal_content: st
     except Exception as e:
         print(f"Gemini協議書生成エラー: {e}")
         return {"title": "遺産分割協議書", "content": f"{project_title}に関する協議の結果、以下の内容で合意しました。\n{proposal_content}\n\n本協議書の内容に全員が合意し、署名します。"}
+
+def build_project_summary_for_prompt(db: Session, project_id: int) -> str:
+    """
+    指定プロジェクトの相続者一覧・遺産一覧をプロンプト用に整形して返す
+    """
+    # 相続者一覧
+    members = crud.get_project_members(db, project_id)
+    member_lines = []
+    for m in members:
+        # 氏名（続柄）形式で
+        name = m.name or (m.email or "不明")
+        relation = m.relation or "-"
+        member_lines.append(f"- {name}（{relation}）")
+    member_str = "\n".join(member_lines) if member_lines else "（登録なし）"
+
+    # 遺産一覧
+    estates = crud.get_estates(db, project_id)
+    estate_lines = []
+    for e in estates:
+        # 名称（種類/評価額/住所）
+        estate_info = f"- {e.name}"
+        if e.type:
+            estate_info += f"（{e.type}"  # 例: 土地/建物
+            if e.property_tax_value:
+                estate_info += f"・評価額: {e.property_tax_value:.0f}円"
+            estate_info += ")"
+        elif e.property_tax_value:
+            estate_info += f"（評価額: {e.property_tax_value:.0f}円)"
+        if e.address:
+            estate_info += f" [{e.address}]"
+        estate_lines.append(estate_info)
+    estate_str = "\n".join(estate_lines) if estate_lines else "（登録なし）"
+
+    summary = f"""【参考情報】\n相続者一覧:\n{member_str}\n\n遺産一覧:\n{estate_str}\n"""
+    return summary
+
+def generate_ai_chat_reply(messages: list[dict], user_message: str, project_id: int | None = None, user_id: int | None = None, db: Session | None = None) -> dict:
+    """
+    AI相談員として会話履歴とユーザー発言をもとに専門的な返答を生成し、project_id, user_idも返す
+    """
+    initialize_google_ai()
+    history_text = "\n".join([
+        f"{m.get('speaker', 'ユーザー')}: {m.get('content', '')}" for m in messages
+    ])
+    # 相続者一覧・遺産一覧を付加
+    project_summary = ""
+    if db is not None and project_id is not None:
+        project_summary = build_project_summary_for_prompt(db, project_id)
+    prompt = f"""
+あなたは遺産相続・家族信託・不動産分割などの分野に精通した日本の司法書士・行政書士・税理士の知見を持つAIアシスタントです。
+ユーザーからの相談や質問に対して、専門的かつ分かりやすい日本語で、法的根拠や実務上の注意点も交えてアドバイスしてください。
+回答は、2〜4文、100〜200文字程度で回答してください。
+
+{project_summary}
+【会話履歴】
+{history_text}
+
+【ユーザーの質問】
+{user_message}
+
+---
+【追加指示】
+以下のような典型的なやりとり例を参考に、ユーザーの発言内容や会話の流れに応じて、適切なフォローアップや質問、共感を含めてください。
+
+- 実家や家についての話題が出た場合:
+  - 売却を検討している→「売却する場合、他の相続人との合意は取れていますか？売却後の資金分配についてはどうお考えですか？」
+  - 住み続けたい→「どなたが住まれる予定ですか？資産バランスの調整について話し合いはされていますか？」
+- 財産・資産・預金について:
+  - 平等・公平・均等→「法定相続分に従った分割をお考えですか？各相続人の状況に応じた分け方も検討されていますか？」
+  - 経済的支援→「特に経済的支援が必要な方はいらっしゃいますか？」
+- 家族関係（兄弟・姉妹・子供・親）:
+  - 「家族間で話し合いは行われていますか？主な意見の相違点はどのような点でしょうか？」
+- 感情的な表現（不安・心配・怖い）:
+  - 「ご不安な点について、具体的にどのようなことが心配ですか？一緒に考えていきましょう。」
+- 争い・揉め事・対立:
+  - 「ご家族間の対立を避けたいお気持ち、よく分かります。どのような点に特に配慮されたいですか？」
+- 会話の初期:
+  - 「状況を教えていただきありがとうございます。相続に関する具体的なご希望やお考えはありますか？」
+- 会話の中盤以降:
+  - 「これまでの会話を踏まえると、特に重要視されているのは公平性と家族関係の維持ですね。他に考慮すべき要素やご質問はありますか？」
+- 一般的なフォローアップ:
+  - 「他に何か気になる点や、相続に関してお考えのことはありますか？」
+
+---
+これらを参考に、ユーザーの状況や会話の流れに合わせて、適切な質問や共感、専門的なアドバイスを返してください。
+"""
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
+    model = genai.GenerativeModel(model_name)
+    response = model.generate_content(prompt)
+    return {
+        "reply": response.text.strip(),
+        "project_id": project_id,
+        "user_id": user_id
+    }

@@ -3,7 +3,7 @@
  */
 
 // APIのベースURL（環境変数から読み込むか、デフォルト値を使用）
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Error型にcodeプロパティを追加した型
 interface ErrorWithCode extends Error {
