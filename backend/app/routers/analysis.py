@@ -6,8 +6,10 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import google.generativeai as genai
 from threading import Lock
+from app.services.ai_service import generate_ai_chat_reply
+from app.db.schemas import AiChatRequest, AiChatResponse
 
-router = APIRouter()
+router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
 
 # 環境変数からGemini APIキーを取得
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -262,4 +264,15 @@ async def update_issue_status(updates: List[IssueUpdate]):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"論点更新中にエラーが発生しました: {str(e)}"
-        ) 
+        )
+
+@router.post("/ai/chat", response_model=AiChatResponse, summary="AI相談員による会話応答")
+async def ai_chat(request: AiChatRequest):
+    """
+    AI相談員が会話履歴とユーザー発言をもとに専門的な返答を生成します。
+    """
+    try:
+        result = generate_ai_chat_reply(request.messages, request.user_message, request.project_id, request.user_id)
+        return AiChatResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI応答生成エラー: {str(e)}") 

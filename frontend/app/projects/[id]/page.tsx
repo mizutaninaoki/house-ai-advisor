@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -15,7 +14,8 @@ import {
   issueApi,
   generateProposals,
   agreementApi,
-  signatureApi
+  signatureApi,
+  API_BASE_URL
 } from '@/app/utils/api';
 import AgreementPreview from '@/app/components/AgreementPreview';
 import AgreementDocument from '@/app/components/AgreementDocument';
@@ -502,7 +502,19 @@ export default function ProjectDetail() {
       // ユーザーのメッセージを分析して適切な応答を生成
       // 本来はここでバックエンドのAI応答生成APIを呼び出すべきですが、
       // モックとして会話コンテキストに基づく応答生成ロジックを実装
-      const aiResponse = await simulateAiResponseGeneration(userMessage, currentMessages);
+      const aiResponseObj = await fetch(`${API_BASE_URL}/api/analysis/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: currentMessages,
+          user_message: userMessage,
+          project_id: projectId,
+          user_id: backendUserId
+        })
+      })
+        .then(res => res.json())
+        .catch(() => ({ reply: 'AI相談員の応答取得に失敗しました', project_id: projectId, user_id: backendUserId }));
+      const aiResponse = aiResponseObj.reply;
       
       // メッセージをDBに保存（AI相談員の応答にuser_idを設定）
       await conversationApi.saveMessage({
@@ -524,62 +536,7 @@ export default function ProjectDetail() {
   };
 
   // モックAI応答生成（実際の実装ではバックエンドのAI APIを使用）
-  const simulateAiResponseGeneration = async (userMessage: string, conversationHistory: Message[]): Promise<string> => {
-    // 実際の実装では、この関数はバックエンドのAI APIを呼び出すべき
-    // ここではコンテキストに基づく簡易応答ロジックを実装
-    
-    // コンテキストに応じた応答を生成するために、最新のメッセージの内容を解析
-    const lowerMessage = userMessage.toLowerCase();
-    
-    // 少し遅延させてAI応答を返す（非同期処理のシミュレーション）
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // 実家に関する言及がある場合
-    if (lowerMessage.includes('実家') || lowerMessage.includes('家')) {
-      if (lowerMessage.includes('売却') || lowerMessage.includes('売る')) {
-        return '実家の売却をお考えなのですね。売却する場合、他の相続人との合意は取れていますか？また、売却後の資金分配についてはどのようにお考えですか？';
-      }
-      if (lowerMessage.includes('住む') || lowerMessage.includes('住み続け')) {
-        return '実家に住み続けることをお考えですね。どなたが住まれる予定ですか？また、住み続ける方と他の相続人との間で、資産バランスの調整について話し合いはされていますか？';
-      }
-      return '実家についてのお考えをお聞かせいただきありがとうございます。他の財産、例えば預貯金や有価証券などの分割についてはどのようにお考えですか？';
-    }
-    
-    // 財産や資産に関する言及がある場合
-    if (lowerMessage.includes('財産') || lowerMessage.includes('資産') || lowerMessage.includes('お金') || lowerMessage.includes('預金')) {
-      if (lowerMessage.includes('平等') || lowerMessage.includes('公平') || lowerMessage.includes('均等')) {
-        return '財産を平等に分けることをお考えなのですね。法定相続分に従った分割をお考えでしょうか？それとも各相続人の状況に応じた分け方をお考えですか？';
-      }
-      return '資産についてのお考えをお聞かせいただきありがとうございます。相続人の中で特に経済的支援が必要な方はいらっしゃいますか？';
-    }
-    
-    // 家族関係に関する言及がある場合
-    if (lowerMessage.includes('兄弟') || lowerMessage.includes('姉妹') || lowerMessage.includes('子供') || lowerMessage.includes('親')) {
-      return 'ご家族の状況を教えていただきありがとうございます。相続について家族間で話し合いは行われていますか？もし行われているなら、現時点での主な意見の相違点はどのような点でしょうか？';
-    }
-    
-    // 感情的な表現が含まれる場合
-    if (lowerMessage.includes('不安') || lowerMessage.includes('心配') || lowerMessage.includes('怖い')) {
-      return 'ご不安に思われていることがあるのですね。具体的にどのような点が心配ですか？少しでも不安を軽減できるよう、一緒に考えていきましょう。';
-    }
-    
-    if (lowerMessage.includes('争い') || lowerMessage.includes('揉め') || lowerMessage.includes('対立')) {
-      return 'ご家族間の対立を避けたいとお考えですね。それはとても大切なことです。相続によって家族関係が損なわれないよう、どのような点に特に配慮されたいですか？';
-    }
-    
-    // 初期段階でのデフォルト応答
-    if (conversationHistory.length <= 2) {
-      return '状況を教えていただきありがとうございます。相続に関する具体的なご希望やお考えはありますか？例えば、実家の取り扱いや資産分割の方法などについて、理想的な形があれば教えてください。';
-    }
-    
-    // 中盤以降のデフォルト応答
-    if (conversationHistory.length > 4) {
-      return 'ありがとうございます。これまでの会話を踏まえると、相続に関して特に重要視されているのは公平性と家族関係の維持ですね。他に考慮すべき重要な要素はありますか？また、現時点でのご質問はありますか？';
-    }
-    
-    // 一般的なフォローアップ質問
-    return 'ご意見をお聞かせいただきありがとうございます。他に何か気になる点や、相続に関してお考えのことはありますか？';
-  };
+  // この関数は不要なので削除
 
   // 論点抽出処理
   const handleExtractIssues = async () => {
@@ -1140,7 +1097,7 @@ export default function ProjectDetail() {
           </svg>
           <div>
             <h2 className="text-xl font-semibold">署名</h2>
-            <p className="text-gray-600 text-sm">最終提案に基づいた協議書への電子署名</p>
+            <p className="text-gray-600 text-sm">最終提案に基づいた協議書への署名</p>
             <p className="text-blue-600 text-xs mt-1">※ 署名状況はプロジェクト全員にリアルタイムで公開されます</p>
           </div>
         </div>

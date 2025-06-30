@@ -300,3 +300,15 @@ class InvitationAcceptResponse(BaseSchema):
     invitee_name: str
     relation: str
     token: str 
+
+# AI相談員チャット用スキーマ
+class AiChatRequest(BaseSchema):
+    messages: list[dict]
+    user_message: str
+    project_id: int | None = None
+    user_id: int | None = None
+
+class AiChatResponse(BaseSchema):
+    reply: str
+    project_id: int | None = None
+    user_id: int | None = None 

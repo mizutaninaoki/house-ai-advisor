@@ -46,7 +46,7 @@ app.add_middleware(
 
 # ルーターの登録
 app.include_router(speech.router, prefix="/api/speech", tags=["Speech"])
-app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
+app.include_router(analysis.router)
 app.include_router(proposals.router, prefix="/api/proposals", tags=["Proposals"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
